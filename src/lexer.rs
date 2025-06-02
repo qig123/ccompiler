@@ -85,11 +85,10 @@ impl Lexer {
                     // 4. 如果是有效的数字字面量
                     let lexeme = &self.source[self.start..self.current];
                     if let Ok(value) = lexeme.parse::<i64>() {
-                        self.add_token(TokenType::LiteralInt, Some(Value::Int(value))); // 添加数字字面量 token (假设 Value::Int 存在)
+                        self.add_token(TokenType::LiteralInt, Some(Value::Int(value)));
                     } else {
-                        // 数字太大，无法解析为 i64
                         return Err(LexerError {
-                            message: "Integer literal is too large".to_string(),
+                            message: "Integer literal is wrong".to_string(),
                             line: self.line,
                             column: self.column - (self.current - self.start),
                         });
@@ -163,7 +162,7 @@ impl Lexer {
         self.tokens.push(token);
     }
     fn peek(&self) -> Option<char> {
-        self.source[self.current..].chars().next()
+        self.source.chars().nth(self.current) // 只查看，不移动 current
     }
     // fn peek_next(&self) -> Option<char> {
     //     let next_index = self.current + self.peek()?.len_utf8();
