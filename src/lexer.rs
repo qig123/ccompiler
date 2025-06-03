@@ -30,7 +30,7 @@ impl Lexer {
             self.scan_token()?;
         }
         self.tokens.push(Token::new(
-            crate::token::TokenType::Semicolon, // EOF token
+            crate::token::TokenType::Eof, // EOF token
             self.line,
             self.column,
             String::from("EOF"),
@@ -146,7 +146,6 @@ impl Lexer {
         self.current >= self.source.len()
     }
     fn advance(&mut self) -> char {
-        //这里用unwrap()是因为我们假设在调用时，current不超过source的长度
         let c = self.source[self.current..].chars().next().unwrap();
         self.current += c.len_utf8();
         self.column += 1;

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use crate::error::CompilerError;
@@ -23,7 +23,6 @@ pub fn preprocess(input_file: &Path, output_file: &Path) -> Result<(), CompilerE
         )))
     }
 }
-
 pub fn get_preprocessed_path(input_path: &Path) -> PathBuf {
     input_path.with_extension("i")
 }

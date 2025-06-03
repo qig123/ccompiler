@@ -13,14 +13,15 @@ pub enum TokenType {
     Comma,         // Symbol: ,
     Semicolon,     // Symbol: ;
     LiteralInt,    // Literal: integer value
+    Eof,           // End of file
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
-    token_type: TokenType,
-    line: usize,
-    column: usize,
-    lexeme: String, // 简单定义为String,后面考虑像C一样，用指针？
-    literal: Option<Value>,
+    pub token_type: TokenType,
+    pub line: usize,
+    pub column: usize,
+    pub lexeme: String, // 简单定义为String,后面考虑像C一样，用指针？
+    pub literal: Option<Value>,
 }
 impl Token {
     pub fn new(
