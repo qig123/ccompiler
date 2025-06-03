@@ -1,6 +1,6 @@
 use clap::Parser;
 use error::CompilerError;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::driver::CompilerDriver;
 
@@ -13,8 +13,6 @@ mod parser;
 mod preprocessor;
 mod token;
 mod value;
-
-const TEST_FILE: &str = "./target/debug/hello.c"; // Path to the test file
 
 #[derive(Parser)]
 #[command(name = "rust_c_compiler")]
@@ -34,16 +32,7 @@ struct Args {
     #[arg(long)]
     codegen: bool,
 }
-impl Default for Args {
-    fn default() -> Self {
-        Args {
-            input: Path::new(TEST_FILE).to_path_buf(), // 默认空路径，测试时覆盖
-            lex: false,
-            parse: false,
-            codegen: false,
-        }
-    }
-}
+
 // --- Main Function ---
 
 fn main() -> Result<(), CompilerError> {
@@ -56,14 +45,19 @@ mod tests {
 
     use super::*;
     use std::path::Path;
+    const TEST_FILE: &str = "./target/debug/hello.c"; // Path to the test file
 
     fn test_args(lex: bool, parse: bool) -> Args {
         Args {
             input: Path::new(TEST_FILE).to_path_buf(),
             lex,
             parse,
-            ..Args::default()
+            codegen: false, // Set to false for lexer and parser tests
         }
+    }
+    #[test]
+    fn test_all() -> Result<(), CompilerError> {
+        CompilerDriver::run(&test_args(false, false))
     }
 
     #[test]
@@ -74,9 +68,5 @@ mod tests {
     #[test]
     fn test_parser() -> Result<(), CompilerError> {
         CompilerDriver::run(&test_args(false, true))
-    }
-    #[test]
-    fn test_all() -> Result<(), CompilerError> {
-        CompilerDriver::run(&test_args(false, false))
     }
 }

@@ -26,6 +26,7 @@ impl CompilerDriver {
         let ast = Self::parse(tokens)?;
         if args.parse {
             println!("{:#?}", ast);
+            Self::cleanup(&preprocessed_path);
             return Ok(());
         }
 
