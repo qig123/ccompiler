@@ -4,18 +4,12 @@ use std::io; // 如果需要处理文件I/O错误
 #[derive(Debug, PartialEq, Clone)]
 pub struct LexerError {
     pub message: String,
-    pub line: usize,
-    pub column: usize,
 }
 
 // Parser 阶段的错误
 #[derive(Debug, PartialEq, Clone)]
 pub struct ParserError {
     pub message: String,
-    // 可以存储导致错误的 Token，方便定位
-    // pub token: Token<'static>, // 注意这里如果存储 Token 需要考虑生命周期，或者只存位置信息
-    pub line: usize,
-    pub column: usize,
 }
 
 // Codegen 阶段的错误

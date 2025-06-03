@@ -6,11 +6,8 @@ use crate::{
 
 pub struct Lexer<'a> {
     source: &'a str,
-    current: usize,      // 当前正在处理的字符的字节索引 (Exclusive)
-    start: usize,        // 当前 token 的起始字节索引 (Inclusive)
-    line: usize,         // 当前行号
-    column: usize,       // 当前字符的下一列位置 (基于 advance)
-    start_column: usize, // 当前 token 的起始列位置
+    current: usize, // 当前正在处理的字符的字节索引 (Exclusive)
+    start: usize,   // 当前 token 的起始字节索引 (Inclusive)
     pub tokens: Vec<Token>,
 }
 impl<'a> Lexer<'a> {
@@ -19,9 +16,6 @@ impl<'a> Lexer<'a> {
             source,
             current: 0,
             start: 0,
-            line: 1,
-            column: 1,
-            start_column: 1, // 初始时，起始列位置为 1
             tokens: Vec::new(),
         }
     }
@@ -30,14 +24,11 @@ impl<'a> Lexer<'a> {
         while !self.is_at_end() {
             // 在开始扫描下一个 token 之前，记录当前 token 的起始位置 (字节索引和列号)
             self.start = self.current;
-            self.start_column = self.column; // 记录当前 token 的起始列位置
             self.scan_token()?;
         }
         let eof_range = self.start..self.current;
         self.tokens.push(Token::new(
             TokenType::Eof, // EOF token
-            self.line,
-            self.column,
             eof_range,
             None,
         ));
@@ -97,17 +88,16 @@ impl<'a> Lexer<'a> {
                                 "Integer literal '{}' is too large or invalid",
                                 lexeme
                             ),
-                            line: self.line,
-                            column: self.start_column,
                         });
                     }
                     Ok(())
                 } else {
                     // 5. 如果是非法的标识符（如 123a）
                     return Err(LexerError {
-                        message: "Identifier cannot start with a digit".to_string(),
-                        line: self.line,
-                        column: self.start_column,
+                        message: format!(
+                            " {} ,this identifier cannot start with a digit",
+                            &self.source[lexeme_range]
+                        ),
                     });
                 }
             }
@@ -130,24 +120,10 @@ impl<'a> Lexer<'a> {
                 }
                 Ok(())
             }
-            _ if c.is_whitespace() => {
-                // Handle whitespace
-                if c == '\n' {
-                    self.line += 1;
-                    self.column = 1; // Reset column on new line
-                } else {
-                    self.column += 1; // Increment column for other whitespace
-                }
-                Ok(())
-            }
+            _ if c.is_whitespace() => Ok(()),
             _ => {
-                // 处理意外字符
-                // advance() 已经移动了 self.current 和更新了 self.column
-                // self.column 指向意外字符的下一列，self.column - c.len_utf8() 指向意外字符的起始列
                 return Err(LexerError {
                     message: format!("Unexpected character: '{}'", c),
-                    line: self.line,                    // 使用当前行
-                    column: self.column - c.len_utf8(), // 使用意外字符的起始列
                 });
             }
         }
@@ -156,13 +132,7 @@ impl<'a> Lexer<'a> {
         // 计算当前 token 的范围
         let lexeme_range = self.start..self.current;
         // 使用记录的起始列来创建 Token
-        let token = Token::new(
-            token_type,
-            self.line,
-            self.start_column,
-            lexeme_range,
-            literal,
-        );
+        let token = Token::new(token_type, lexeme_range, literal);
         self.tokens.push(token);
     }
 
@@ -174,7 +144,6 @@ impl<'a> Lexer<'a> {
     fn advance(&mut self) -> char {
         let c = self.source[self.current..].chars().next().unwrap();
         self.current += c.len_utf8(); // 按字节长度前进
-        self.column += 1; // 简单地按字符数增加列号 (对于非 ASCII 字符可能需要更复杂的逻辑，取决于 C 标准或习惯)
         c
     }
     // 查看下一个字符但不移动

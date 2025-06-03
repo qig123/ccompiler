@@ -48,8 +48,6 @@ impl<'a> Parser<'a> {
         } else {
             Err(ParserError {
                 message: "Expected function name after 'int'".to_string(),
-                line: self.peek().line,
-                column: self.peek().column,
             })
         }
     }
@@ -74,7 +72,6 @@ impl<'a> Parser<'a> {
     }
     fn parse_expression(&mut self) -> Result<Expr, ParserError> {
         //这里表达式暂时只有一种, 就是数字常量int
-        let token = self.previous().clone();
         // println!("Parsing expression: {:?}", token);
         if self.match_token(&[TokenType::LiteralInt]) {
             let prev = self.previous();
@@ -90,8 +87,6 @@ impl<'a> Parser<'a> {
         } else {
             Err(ParserError {
                 message: "Expected an integer literal".to_string(),
-                line: token.line,
-                column: token.column,
             })
         }
     }
@@ -114,8 +109,6 @@ impl<'a> Parser<'a> {
         if self.check(expected) {
             Ok(self.advance())
         } else {
-            // 获取上一个token的位置，这个位置更准确地表示了错误发生的地方
-            let prev_token = self.previous();
             // 构造更有信息量的错误消息
             let error_message = format!(
                 "{} (found '{}' instead)",
@@ -124,8 +117,6 @@ impl<'a> Parser<'a> {
             );
             Err(ParserError {
                 message: error_message,
-                line: prev_token.line,
-                column: prev_token.column,
             })
         }
     }

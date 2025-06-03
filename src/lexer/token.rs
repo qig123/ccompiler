@@ -20,23 +20,13 @@ pub enum TokenType {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
-    pub line: usize,
-    pub column: usize,
     pub lexeme_range: Range<usize>,
     pub literal: Option<Value>,
 }
 impl Token {
-    pub fn new(
-        token_type: TokenType,
-        line: usize,
-        column: usize,
-        lexeme: Range<usize>,
-        literal: Option<Value>,
-    ) -> Self {
+    pub fn new(token_type: TokenType, lexeme: Range<usize>, literal: Option<Value>) -> Self {
         Token {
             token_type,
-            line,
-            column,
             lexeme_range: lexeme,
             literal,
         }
