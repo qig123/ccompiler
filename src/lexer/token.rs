@@ -1,11 +1,13 @@
+use std::ops::Range;
+
 use crate::value::Value;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
     KeywordInt,    // Keyword: int
     KeywordReturn, // Keyword: return
-    KeywrodVoid,   // Keyword: void
-    Identifer,     // Identifier: variable or function name
+    KeywordVoid,   // Keyword: void
+    Identifier,    // Identifier: variable or function name
     LeftParen,     // Symbol: (
     RightParen,    // Symbol: )
     LeftBrace,     // Symbol: {
@@ -20,7 +22,7 @@ pub struct Token {
     pub token_type: TokenType,
     pub line: usize,
     pub column: usize,
-    pub lexeme: String, // 简单定义为String,后面考虑像C一样，用指针？
+    pub lexeme_range: Range<usize>,
     pub literal: Option<Value>,
 }
 impl Token {
@@ -28,15 +30,18 @@ impl Token {
         token_type: TokenType,
         line: usize,
         column: usize,
-        lexeme: String,
+        lexeme: Range<usize>,
         literal: Option<Value>,
     ) -> Self {
         Token {
             token_type,
             line,
             column,
-            lexeme,
+            lexeme_range: lexeme,
             literal,
         }
+    }
+    pub fn get_lexeme<'a>(&self, source: &'a str) -> &'a str {
+        &source[self.lexeme_range.clone()] // clone() 因为 Range 是 Copy
     }
 }

@@ -5,13 +5,18 @@ use crate::{
     value::Value,
 };
 
-pub struct Parser {
+pub struct Parser<'a> {
     tokens: Vec<Token>,
     current: usize,
+    source: &'a str,
 }
-impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Self {
-        Parser { tokens, current: 0 }
+impl<'a> Parser<'a> {
+    pub fn new(tokens: Vec<Token>, source: &'a str) -> Self {
+        Parser {
+            tokens,
+            current: 0,
+            source,
+        }
     }
 
     pub fn parse(&mut self) -> Result<Vec<Function>, ParserError> {
@@ -27,10 +32,10 @@ impl Parser {
     }
     fn parse_function(&mut self) -> Result<Function, ParserError> {
         let _name = self.consume(TokenType::KeywordInt, "expected int")?;
-        if self.match_token(&[TokenType::Identifer]) {
+        if self.match_token(&[TokenType::Identifier]) {
             let identifier = self.previous().clone();
             self.consume(TokenType::LeftParen, "Expected '(' after function name")?;
-            self.consume(TokenType::KeywrodVoid, "Expected 'void' ")?;
+            self.consume(TokenType::KeywordVoid, "Expected 'void' ")?;
             self.consume(
                 TokenType::RightParen,
                 "Expected ')' to end function parameters",
@@ -112,7 +117,11 @@ impl Parser {
             // 获取上一个token的位置，这个位置更准确地表示了错误发生的地方
             let prev_token = self.previous();
             // 构造更有信息量的错误消息
-            let error_message = format!("{} (found '{}' instead)", message, current_token.lexeme);
+            let error_message = format!(
+                "{} (found '{}' instead)",
+                message,
+                current_token.get_lexeme(self.source)
+            );
             Err(ParserError {
                 message: error_message,
                 line: prev_token.line,

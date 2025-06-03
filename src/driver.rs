@@ -12,11 +12,14 @@ pub struct CompilerDriver;
 impl CompilerDriver {
     pub fn run(args: &crate::Args) -> Result<(), CompilerError> {
         // 1. 预处理
-        // println!("Preprocessing input file: {}", args.input.display());
         let preprocessed_path = &args.input.with_extension("i");
         Self::preprocess(&args.input, &preprocessed_path)?;
+
+        let source = fs::read_to_string(&preprocessed_path)
+            .map_err(|e| CompilerError::Io(format!("Failed to read file: {}", e)))?;
+
         // 2. 词法分析
-        let tokens = Self::lex(&preprocessed_path)?;
+        let tokens = Self::lex(&source)?;
         if args.lex {
             println!("{:?}", tokens);
             Self::cleanup(&preprocessed_path);
@@ -24,7 +27,7 @@ impl CompilerDriver {
         }
 
         // 3. 语法分析
-        let ast = Self::parse(tokens)?;
+        let ast = Self::parse(tokens, &source)?;
         if args.parse {
             println!("{:#?}", ast);
             Self::cleanup(&preprocessed_path);
@@ -54,16 +57,14 @@ impl CompilerDriver {
         })
     }
 
-    fn lex(path: &Path) -> Result<Vec<Token>, CompilerError> {
-        let source = fs::read_to_string(path)
-            .map_err(|e| CompilerError::Io(format!("Failed to read file: {}", e)))?;
-        let mut lexer = lexer::Lexer::new(source);
+    fn lex<'a>(source: &'a str) -> Result<Vec<Token>, CompilerError> {
+        let mut lexer = lexer::Lexer::new(&source);
         lexer.tokenize()?;
         Ok(lexer.tokens)
     }
 
-    fn parse(tokens: Vec<Token>) -> Result<Vec<Function>, ParserError> {
-        let mut parser = parser::Parser::new(tokens);
+    fn parse<'a>(tokens: Vec<Token>, source: &'a str) -> Result<Vec<Function>, ParserError> {
+        let mut parser = parser::Parser::new(tokens, source);
         parser.parse()
     }
 
