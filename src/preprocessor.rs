@@ -23,6 +23,3 @@ pub fn preprocess(input_file: &Path, output_file: &Path) -> Result<(), CompilerE
         )))
     }
 }
-pub fn get_preprocessed_path(input_path: &Path) -> PathBuf {
-    input_path.with_extension("i")
-}
