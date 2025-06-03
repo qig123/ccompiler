@@ -1,7 +1,7 @@
 use crate::{
     error::ParserError,
     expr::{Expr, Function, LiteralExpr, Stmt},
-    token::{Token, TokenType},
+    lexer::{Token, token::TokenType},
     value::Value,
 };
 

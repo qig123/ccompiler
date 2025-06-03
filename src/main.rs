@@ -11,7 +11,6 @@ mod expr;
 mod lexer;
 mod parser;
 mod preprocessor;
-mod token;
 mod value;
 
 #[derive(Parser)]

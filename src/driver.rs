@@ -1,7 +1,8 @@
 use crate::{
     error::{CompilerError, ParserError},
     expr::Function,
-    lexer, parser,
+    lexer::{self, Token},
+    parser,
     preprocessor::{self},
 };
 use std::{fs, path::Path};
@@ -53,7 +54,7 @@ impl CompilerDriver {
         })
     }
 
-    fn lex(path: &Path) -> Result<Vec<crate::token::Token>, CompilerError> {
+    fn lex(path: &Path) -> Result<Vec<Token>, CompilerError> {
         let source = fs::read_to_string(path)
             .map_err(|e| CompilerError::Io(format!("Failed to read file: {}", e)))?;
         let mut lexer = lexer::Lexer::new(source);
@@ -61,7 +62,7 @@ impl CompilerDriver {
         Ok(lexer.tokens)
     }
 
-    fn parse(tokens: Vec<crate::token::Token>) -> Result<Vec<Function>, ParserError> {
+    fn parse(tokens: Vec<Token>) -> Result<Vec<Function>, ParserError> {
         let mut parser = parser::Parser::new(tokens);
         parser.parse()
     }
@@ -77,7 +78,6 @@ impl CompilerDriver {
         if status.success() {
             Ok(())
         } else {
-            //这里是什么错误?
             Err(CompilerError::Io("Linking failed".into()))
         }
     }

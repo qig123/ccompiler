@@ -1,6 +1,6 @@
 use crate::{
     error::LexerError,
-    token::{Token, TokenType},
+    lexer::token::{Token, TokenType},
     value::Value,
 };
 
@@ -30,7 +30,7 @@ impl Lexer {
             self.scan_token()?;
         }
         self.tokens.push(Token::new(
-            crate::token::TokenType::Eof, // EOF token
+            TokenType::Eof, // EOF token
             self.line,
             self.column,
             String::from("EOF"),
@@ -43,27 +43,27 @@ impl Lexer {
         let c = self.advance();
         match c {
             '(' => {
-                self.add_token(crate::token::TokenType::LeftParen, None);
+                self.add_token(TokenType::LeftParen, None);
                 Ok(())
             }
             ')' => {
-                self.add_token(crate::token::TokenType::RightParen, None);
+                self.add_token(TokenType::RightParen, None);
                 Ok(())
             }
             '{' => {
-                self.add_token(crate::token::TokenType::LeftBrace, None);
+                self.add_token(TokenType::LeftBrace, None);
                 Ok(())
             }
             '}' => {
-                self.add_token(crate::token::TokenType::RightBrace, None);
+                self.add_token(TokenType::RightBrace, None);
                 Ok(())
             }
             ',' => {
-                self.add_token(crate::token::TokenType::Comma, None);
+                self.add_token(TokenType::Comma, None);
                 Ok(())
             }
             ';' => {
-                self.add_token(crate::token::TokenType::Semicolon, None);
+                self.add_token(TokenType::Semicolon, None);
                 Ok(())
             }
             '0'..='9' => {
@@ -114,10 +114,10 @@ impl Lexer {
                 }
                 let lexeme = &self.source[self.start..self.current];
                 match lexeme {
-                    "int" => self.add_token(crate::token::TokenType::KeywordInt, None),
-                    "return" => self.add_token(crate::token::TokenType::KeywordReturn, None),
-                    "void" => self.add_token(crate::token::TokenType::KeywrodVoid, None),
-                    _ => self.add_token(crate::token::TokenType::Identifer, None),
+                    "int" => self.add_token(TokenType::KeywordInt, None),
+                    "return" => self.add_token(TokenType::KeywordReturn, None),
+                    "void" => self.add_token(TokenType::KeywrodVoid, None),
+                    _ => self.add_token(TokenType::Identifer, None),
                 }
                 Ok(())
             }
@@ -151,11 +151,7 @@ impl Lexer {
         self.column += 1;
         c
     }
-    fn add_token(
-        &mut self,
-        token_type: crate::token::TokenType,
-        literal: Option<crate::value::Value>,
-    ) {
+    fn add_token(&mut self, token_type: TokenType, literal: Option<crate::value::Value>) {
         let lexeme = self.source[self.start..self.current].to_string();
         let token = Token::new(token_type, self.line, self.column, lexeme, literal);
         self.tokens.push(token);

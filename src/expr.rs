@@ -1,4 +1,4 @@
-use crate::token::Token;
+use crate::lexer::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
