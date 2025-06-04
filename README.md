@@ -1,18 +1,23 @@
-# c_rust
+# C Compiler 
 
-# 编译
-cargo build 
-# ,要测试的文件 .c程序 目前暂时放到和 生成程序的同一目录(为了对接书提供的测试) 运行
+## 📌 当前进度  
+✅ **Chapter 1: A Minimal Compiler**  
+⬜ Chapter 2: UNARY OPERATORS  
+⬜ Chapter 3: BINARY OPERATORS  
+⬜ Chapter 4: LOGICAL AND RELATIONAL OPERATORS  
+
+---
+
+## 🛠 编译与运行
+
+### 构建项目
+
+cargo build
+
+### 运行编译器
 ./target/debug/rust_c_compiler ./target/debug/hello.c
+📝 注意：测试用的 .c 文件需放在与生成程序相同的目录
 
 
-# 书提供的测试
-https://github.com/nlsandler/writing-a-c-compiler-tests
-
-
-./test_compiler ../rust_c_compiler/target/debug/rust_c_compiler --chapter 1 --stage lex
-./test_compiler ../rust_c_compiler/target/debug/rust_c_compiler --chapter 1 --stage parse
-./test_compiler ../rust_c_compiler/target/debug/rust_c_compiler --chapter 1 --stage codegen
-./test_compiler ../rust_c_compiler/target/debug/rust_c_compiler --chapter 1
-
-
+🧪 测试套件
+[官方测试仓库](https://github.com/nlsandler/writing-a-c-compiler-tests)
