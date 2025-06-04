@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::value::Value;
+use crate::types::types::Value;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {

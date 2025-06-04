@@ -1,7 +1,7 @@
 use crate::{
     error::LexerError,
     lexer::token::{Token, TokenType},
-    value::Value,
+    types::types::Value,
 };
 
 pub struct Lexer<'a> {
@@ -128,7 +128,7 @@ impl<'a> Lexer<'a> {
             }
         }
     }
-    fn add_token(&mut self, token_type: TokenType, literal: Option<crate::value::Value>) {
+    fn add_token(&mut self, token_type: TokenType, literal: Option<Value>) {
         // 计算当前 token 的范围
         let lexeme_range = self.start..self.current;
         // 使用记录的起始列来创建 Token

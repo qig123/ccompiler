@@ -2,7 +2,7 @@ use crate::{
     error::ParserError,
     lexer::{Token, token::TokenType},
     parser::c_ast::{Expr, Function, LiteralExpr, Program, Stmt},
-    value::Value,
+    types::types::Value,
 };
 
 pub struct Parser<'a> {

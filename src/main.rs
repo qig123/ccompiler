@@ -9,7 +9,7 @@ mod driver;
 mod error;
 mod lexer;
 mod parser;
-mod value;
+mod types;
 
 #[derive(Parser)]
 #[command(name = "ccompiler")]
