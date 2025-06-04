@@ -15,7 +15,7 @@
 cargo build
 
 ### 运行编译器
-./target/debug/rust_c_compiler ./target/debug/hello.c
+./target/debug/ccompiler ./target/debug/hello.c
 📝 注意：测试用的 .c 文件需放在与生成程序相同的目录
 
 
