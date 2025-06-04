@@ -52,7 +52,7 @@ mod tests {
             input: Path::new(TEST_FILE).to_path_buf(),
             lex,
             parse,
-            codegen: false, // Set to false for lexer and parser tests
+            codegen: true, // Set to false for lexer and parser tests
         }
     }
     #[test]

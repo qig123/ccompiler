@@ -1,6 +1,6 @@
 use crate::{
     error::ParserError,
-    expr::{Expr, Function, LiteralExpr, Stmt},
+    expr::{Expr, Function, LiteralExpr, Program, Stmt},
     lexer::{Token, token::TokenType},
     value::Value,
 };
@@ -19,7 +19,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Result<Vec<Function>, ParserError> {
+    pub fn parse(&mut self) -> Result<Program, ParserError> {
         let mut functions = Vec::new();
         while !self.is_at_end() {
             let f = self.parse_function();
@@ -28,7 +28,9 @@ impl<'a> Parser<'a> {
                 Err(e) => return Err(e),
             }
         }
-        Ok(functions)
+        Ok(Program {
+            functions: functions,
+        })
     }
     fn parse_function(&mut self) -> Result<Function, ParserError> {
         let _name = self.consume(TokenType::KeywordInt, "expected int")?;

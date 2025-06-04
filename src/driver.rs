@@ -1,6 +1,7 @@
 use crate::{
-    error::{CompilerError, ParserError},
-    expr::Function,
+    codegen::{ast::Assemble, codegen::AssemblyGenerator},
+    error::{CodegenError, CompilerError, ParserError},
+    expr::Program,
     lexer::{self, Token},
     parser,
     preprocessor::{self},
@@ -28,6 +29,8 @@ impl CompilerDriver {
 
         // 3. 语法分析
         let ast = Self::parse(tokens, &source)?;
+        //  println!("{:#?}", ast);
+
         if args.parse {
             println!("{:#?}", ast);
             Self::cleanup(&preprocessed_path);
@@ -35,11 +38,12 @@ impl CompilerDriver {
         }
 
         // 4. 代码生成（示例）
-        // let asm = Self::codegen(ast)?;
-        // if args.codegen {
-        //     println!("{}", asm);
-        //     return Ok(());
-        // }
+        let asm = Self::codegen(ast, &source)?;
+        if args.codegen {
+            println!("{:?}", asm);
+            Self::cleanup(&preprocessed_path);
+            return Ok(());
+        }
 
         // 5. 汇编和链接
         let output_path = args.input.with_extension("");
@@ -63,9 +67,13 @@ impl CompilerDriver {
         Ok(lexer.tokens)
     }
 
-    fn parse<'a>(tokens: Vec<Token>, source: &'a str) -> Result<Vec<Function>, ParserError> {
+    fn parse<'a>(tokens: Vec<Token>, source: &'a str) -> Result<Program, ParserError> {
         let mut parser = parser::Parser::new(tokens, source);
         parser.parse()
+    }
+    fn codegen<'a>(ast: Program, source: &'a str) -> Result<Assemble, CodegenError> {
+        let mut codegen = AssemblyGenerator::new(source);
+        codegen.generate(ast)
     }
 
     fn assemble_and_link(input: &Path, output: &Path) -> Result<(), CompilerError> {

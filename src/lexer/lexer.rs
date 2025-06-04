@@ -95,7 +95,7 @@ impl<'a> Lexer<'a> {
                     // 5. 如果是非法的标识符（如 123a）
                     return Err(LexerError {
                         message: format!(
-                            " {} ,this identifier cannot start with a digit",
+                            " '{}' , this identifier cannot start with a digit",
                             &self.source[lexeme_range]
                         ),
                     });

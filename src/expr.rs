@@ -1,4 +1,8 @@
 use crate::lexer::Token;
+#[derive(Debug, Clone, PartialEq)]
+pub struct Program {
+    pub functions: Vec<Function>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
