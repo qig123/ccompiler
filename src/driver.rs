@@ -1,10 +1,8 @@
 use crate::{
-    code_emission::CodeEmitter,
-    codegen::{ast::Assemble, codegen::AssemblyGenerator},
+    codegen::{ast::Assemble, code_emission::CodeEmitter, codegen::AssemblyGenerator},
     error::{CodegenError, CompilerError, ParserError},
-    expr::Program,
     lexer::{self, Token},
-    parser,
+    parse::{expr::Program, parse::Parser},
 };
 use std::{fs, path::Path};
 
@@ -110,7 +108,7 @@ impl CompilerDriver {
     }
 
     fn parse<'a>(tokens: Vec<Token>, source: &'a str) -> Result<Program, ParserError> {
-        let mut parser = parser::Parser::new(tokens, source);
+        let mut parser = Parser::new(tokens, source);
         parser.parse()
     }
     fn codegen<'a>(ast: Program, source: &'a str) -> Result<Assemble, CodegenError> {

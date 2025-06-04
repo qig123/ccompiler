@@ -1,7 +1,7 @@
 use crate::{
     codegen::ast::{AssFunction, Assemble, Instruction, Operand},
     error::CodegenError,
-    expr::{Expr, Function, Program, Stmt},
+    parse::expr::{Expr, Function, LiteralExpr, Program, Stmt},
 };
 
 pub struct AssemblyGenerator<'a> {
@@ -46,7 +46,7 @@ impl<'a> AssemblyGenerator<'a> {
                         Expr::Literal(lit) => {
                             match lit {
                                 // 这里可以扩展更多的常量类型
-                                crate::expr::LiteralExpr::Integer(i) => {
+                                LiteralExpr::Integer(i) => {
                                     let mut is: Vec<Instruction> = Vec::new();
                                     let mov = Instruction::Mov {
                                         src: Operand::Imm(i.clone()),

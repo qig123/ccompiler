@@ -21,3 +21,5 @@ cargo build
 
 🧪 测试套件
 [官方测试仓库](https://github.com/nlsandler/writing-a-c-compiler-tests)
+
+./test_compiler ../ccompiler/target/debug/ccompiler --chapter 1 --stage lex

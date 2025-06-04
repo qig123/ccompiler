@@ -4,17 +4,15 @@ use std::path::PathBuf;
 
 use crate::driver::CompilerDriver;
 
-mod code_emission;
 mod codegen;
 mod driver;
 mod error;
-mod expr;
 mod lexer;
-mod parser;
+mod parse;
 mod value;
 
 #[derive(Parser)]
-#[command(name = "rust_c_compiler")]
+#[command(name = "ccompiler")]
 struct Args {
     /// Input C source file
     input: PathBuf,
