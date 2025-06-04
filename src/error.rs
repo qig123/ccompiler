@@ -1,4 +1,4 @@
-use std::io; // 如果需要处理文件I/O错误
+use std::{fmt, io}; // 如果需要处理文件I/O错误
 
 // Lexer 阶段的错误
 #[derive(Debug, PartialEq, Clone)]
@@ -16,9 +16,11 @@ pub struct ParserError {
 #[derive(Debug, PartialEq, Clone)]
 pub struct CodegenError {
     pub message: String,
-    // Codegen 错误可能与源码位置无关，也可能有关联（例如，某个表达式无法生成代码）
-    // pub line: Option<usize>,
-    // pub column: Option<usize>,
+}
+#[derive(Debug, PartialEq, Clone)]
+
+pub struct CodeEmitterError {
+    pub message: String,
 }
 
 // 顶层编译器错误，包装了所有可能的错误类型
@@ -27,12 +29,14 @@ pub enum CompilerError {
     Lexer(LexerError),
     Parser(ParserError),
     Codegen(CodegenError),
-    // 其他可能的错误，例如文件读取错误
-    Io(String), // Simplistic wrapper for IO errors
-                // Internal compiler errors (should not happen if code is correct, but good for debugging)
-                // InternalError(String),
+    CodeEmitter(CodeEmitterError),
+    Io(String), // 可以保留这个用于其他一般的文件I/O错误
+    // 添加一个新的变体用于外部工具执行错误
+    ExternalToolError(String),
+    // 或者更具体一些，例如
+    // LinkingError(String),
+    // AssemblyError(String), // 如果汇编和链接分开调用
 }
-
 // 实现 From trait 方便自动转换错误
 impl From<LexerError> for CompilerError {
     fn from(err: LexerError) -> Self {
@@ -56,5 +60,42 @@ impl From<CodegenError> for CompilerError {
 impl From<io::Error> for CompilerError {
     fn from(err: io::Error) -> Self {
         CompilerError::Io(err.to_string())
+    }
+}
+
+// 确保 LexerError, ParserError, CodegenError, CodeEmitterError
+// 也实现了 Display 或至少 Debug
+impl fmt::Display for LexerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+// 对 ParserError, CodegenError, CodeEmitterError 做类似实现
+impl fmt::Display for ParserError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+impl fmt::Display for CodegenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+impl fmt::Display for CodeEmitterError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl fmt::Display for CompilerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CompilerError::Lexer(err) => write!(f, "Lexer Error: {}", err),
+            CompilerError::Parser(err) => write!(f, "Parser Error: {}", err),
+            CompilerError::Codegen(err) => write!(f, "Codegen Error: {}", err),
+            CompilerError::CodeEmitter(err) => write!(f, "Code Emitter Error: {}", err),
+            CompilerError::Io(msg) => write!(f, "IO Error: {}", msg),
+            CompilerError::ExternalToolError(msg) => write!(f, "External Tool Error: {}", msg), // 添加这行
+        }
     }
 }

@@ -4,13 +4,13 @@ use std::path::PathBuf;
 
 use crate::driver::CompilerDriver;
 
+mod code_emission;
 mod codegen;
 mod driver;
 mod error;
 mod expr;
 mod lexer;
 mod parser;
-mod preprocessor;
 mod value;
 
 #[derive(Parser)]
@@ -47,27 +47,16 @@ mod tests {
     use std::path::Path;
     const TEST_FILE: &str = "./target/debug/hello.c"; // Path to the test file
 
-    fn test_args(lex: bool, parse: bool) -> Args {
+    fn test_args(lex: bool, parse: bool, codegen: bool) -> Args {
         Args {
             input: Path::new(TEST_FILE).to_path_buf(),
             lex,
             parse,
-            codegen: true, // Set to false for lexer and parser tests
+            codegen,
         }
     }
     #[test]
     fn test_all() -> Result<(), CompilerError> {
-        CompilerDriver::run(&test_args(false, false))
+        CompilerDriver::run(&test_args(false, false, true))
     }
-    //除非你用 cargo test -- --test-threads=1
-    // 否则测试可能会因为并发问题而失败
-    // #[test]
-    // fn test_lexer() -> Result<(), CompilerError> {
-    //     CompilerDriver::run(&test_args(true, false))
-    // }
-
-    // #[test]
-    // fn test_parser() -> Result<(), CompilerError> {
-    //     CompilerDriver::run(&test_args(false, true))
-    // }
 }

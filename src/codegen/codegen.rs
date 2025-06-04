@@ -53,8 +53,7 @@ impl<'a> AssemblyGenerator<'a> {
                                         dst: Operand::Register("rax".to_string()),
                                     };
                                     let ret = Instruction::Ret;
-                                   // println!("Register name: {:?} {:?}", mov, ret);
-
+                                    // println!("Register name: {:?} {:?}", mov, ret);
                                     is.push(mov);
                                     is.push(ret);
                                     Ok(is)

@@ -1,10 +1,10 @@
 use crate::{
+    code_emission::CodeEmitter,
     codegen::{ast::Assemble, codegen::AssemblyGenerator},
     error::{CodegenError, CompilerError, ParserError},
     expr::Program,
     lexer::{self, Token},
     parser,
-    preprocessor::{self},
 };
 use std::{fs, path::Path};
 
@@ -26,39 +26,81 @@ impl CompilerDriver {
             Self::cleanup(&preprocessed_path);
             return Ok(());
         }
-
         // 3. 语法分析
         let ast = Self::parse(tokens, &source)?;
-        //  println!("{:#?}", ast);
-
         if args.parse {
             println!("{:#?}", ast);
             Self::cleanup(&preprocessed_path);
             return Ok(());
         }
 
-        // 4. 代码生成（示例）
+        // 4. 代码生成
         let asm = Self::codegen(ast, &source)?;
+        // 生成汇编文件
+        let asm_output_path = args.input.with_extension("s");
+        CodeEmitter::emit(&asm, &asm_output_path)?;
         if args.codegen {
-            println!("{:?}", asm);
+            // 打印AST信息
+            println!("");
+            println!("[AST Debug]");
+            println!("");
+            println!("{:#?}", asm); // 使用 {:#?} 美化输出
+
+            // 打印生成的汇编代码
+            println!("\n[Generated Assembly]");
+            println!("");
+            println!("Output file: {}", asm_output_path.display());
+            match fs::read_to_string(&asm_output_path) {
+                Ok(asm_content) => {
+                    println!("");
+                    println!("{}", asm_content);
+                }
+                Err(e) => {
+                    println!("\n[Error] Failed to read assembly file:");
+                    println!("File: {}", asm_output_path.display());
+                    println!("Error: {}", e);
+                }
+            }
             Self::cleanup(&preprocessed_path);
             return Ok(());
         }
-
         // 5. 汇编和链接
         let output_path = args.input.with_extension("");
-        // println!("Output path: {}", output_path.display());
-        Self::assemble_and_link(&args.input, &output_path)?;
+
+        println!("Assembling and linking to: {}", output_path.display());
+        Self::assemble_and_link(&asm_output_path, &output_path)?;
         Self::cleanup(&preprocessed_path);
         println!("Successfully generated: {}", output_path.display());
         Ok(())
     }
 
-    fn preprocess(input: &Path, output: &Path) -> Result<(), CompilerError> {
-        preprocessor::preprocess(input, output).map_err(|e| {
-            Self::cleanup(output);
-            e
-        })
+    fn preprocess(input_file: &Path, output_file: &Path) -> Result<(), CompilerError> {
+        let mut command = std::process::Command::new("gcc");
+        let status = command
+            .args(&[
+                "-E",
+                "-P",
+                input_file.to_str().unwrap(),
+                "-o",
+                output_file.to_str().unwrap(),
+            ])
+            .status()
+            .map_err(|e| {
+                CompilerError::ExternalToolError(format!(
+                    "Failed to execute preprocessor ({}): {}",
+                    command.get_program().display(),
+                    e
+                ))
+            })?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(CompilerError::ExternalToolError(format!(
+                "Preprocess failed. {} exited with status: {:?}",
+                command.get_program().display(),
+                status.code()
+            )))
+        }
     }
 
     fn lex<'a>(source: &'a str) -> Result<Vec<Token>, CompilerError> {
@@ -77,20 +119,29 @@ impl CompilerDriver {
     }
 
     fn assemble_and_link(input: &Path, output: &Path) -> Result<(), CompilerError> {
-        let status = std::process::Command::new("gcc")
-            .arg(input)
-            .arg("-o")
-            .arg(output)
-            .status()
-            .map_err(|e| CompilerError::Io(e.to_string()))?;
+        let mut command = std::process::Command::new("gcc");
+        command.arg("-o").arg(output).arg(input);
+
+        let status = command.status().map_err(|e| {
+            CompilerError::ExternalToolError(format!(
+                "Failed to execute linker ({}): {}",
+                command.get_program().display(), // 获取命令名
+                e
+            ))
+        })?;
 
         if status.success() {
             Ok(())
         } else {
-            Err(CompilerError::Io("Linking failed".into()))
+            // 命令执行成功，但返回了非零状态码
+            // 这也是一种外部工具错误
+            Err(CompilerError::ExternalToolError(format!(
+                "Linking failed. {} exited with status: {:?}",
+                command.get_program().display(),
+                status.code() // 获取退出码
+            )))
         }
     }
-
     fn cleanup(file: &Path) {
         if fs::metadata(file).is_ok() {
             let _ = fs::remove_file(file);

@@ -13,3 +13,6 @@ https://github.com/nlsandler/writing-a-c-compiler-tests
 ./test_compiler ../rust_c_compiler/target/debug/rust_c_compiler --chapter 1 --stage lex
 ./test_compiler ../rust_c_compiler/target/debug/rust_c_compiler --chapter 1 --stage parse
 ./test_compiler ../rust_c_compiler/target/debug/rust_c_compiler --chapter 1 --stage codegen
+./test_compiler ../rust_c_compiler/target/debug/rust_c_compiler --chapter 1
+
+
