@@ -1,5 +1,5 @@
 use crate::{
-    codegen::ast::Assemble,
+    codegen::assembly_ir::Assemble,
     error::{CodeEmitterError, CompilerError},
 };
 use std::fs::File;
@@ -43,9 +43,9 @@ impl CodeEmitter {
             // 函数体
             for instruction in &function.instructions {
                 match instruction {
-                    crate::codegen::ast::Instruction::Mov { src, dst } => {
+                    crate::codegen::assembly_ir::Instruction::Mov { src, dst } => {
                         let src_str = match src {
-                            crate::codegen::ast::Operand::Imm(val) => format!("${}", val),
+                            crate::codegen::assembly_ir::Operand::Imm(val) => format!("${}", val),
                             _ => {
                                 return Err(CompilerError::CodeEmitter(CodeEmitterError {
                                     message: "src must be immediate".to_string(),
@@ -53,7 +53,9 @@ impl CodeEmitter {
                             }
                         };
                         let dst_str = match dst {
-                            crate::codegen::ast::Operand::Register(reg) => format!("%{}", reg),
+                            crate::codegen::assembly_ir::Operand::Register(reg) => {
+                                format!("%{}", reg)
+                            }
                             _ => {
                                 return Err(CompilerError::CodeEmitter(CodeEmitterError {
                                     message: "dst must be a register".to_string(),
@@ -66,7 +68,7 @@ impl CodeEmitter {
                             "Failed to write MOV instruction",
                         )?;
                     }
-                    crate::codegen::ast::Instruction::Ret => {
+                    crate::codegen::assembly_ir::Instruction::Ret => {
                         emitter.write_line(
                             &mut file,
                             "\tret",

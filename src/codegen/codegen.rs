@@ -1,7 +1,7 @@
 use crate::{
-    codegen::ast::{AssFunction, Assemble, Instruction, Operand},
+    codegen::assembly_ir::{AssFunction, Assemble, Instruction, Operand},
     error::CodegenError,
-    parse::expr::{Expr, Function, LiteralExpr, Program, Stmt},
+    parser::c_ast::{Expr, Function, LiteralExpr, Program, Stmt},
 };
 
 pub struct AssemblyGenerator<'a> {

@@ -1,3 +1,3 @@
-pub mod ast;
-pub mod code_emission;
+pub mod assembly_emitter;
+pub mod assembly_ir;
 pub mod codegen;

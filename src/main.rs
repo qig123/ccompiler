@@ -8,7 +8,7 @@ mod codegen;
 mod driver;
 mod error;
 mod lexer;
-mod parse;
+mod parser;
 mod value;
 
 #[derive(Parser)]

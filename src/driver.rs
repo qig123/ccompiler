@@ -1,8 +1,8 @@
 use crate::{
-    codegen::{ast::Assemble, code_emission::CodeEmitter, codegen::AssemblyGenerator},
+    codegen::{assembly_emitter::CodeEmitter, assembly_ir::Assemble, codegen::AssemblyGenerator},
     error::{CodegenError, CompilerError, ParserError},
     lexer::{self, Token},
-    parse::{expr::Program, parse::Parser},
+    parser::{c_ast::Program, parser::Parser},
 };
 use std::{fs, path::Path};
 
