@@ -15,6 +15,9 @@ pub enum TokenType {
     Comma,         // Symbol: ,
     Semicolon,     // Symbol: ;
     LiteralInt,    // Literal: integer value
+    BitwiseNot,    // ~
+    Minus,         // -
+    Decrement,     // --
     Eof,           // End of file
 }
 #[derive(Debug, Clone, PartialEq)]

@@ -62,6 +62,18 @@ impl<'a> Lexer<'a> {
                 self.add_token(TokenType::Semicolon, None);
                 Ok(())
             }
+            '~' => {
+                self.add_token(TokenType::BitwiseNot, None);
+                Ok(())
+            }
+            '-' => {
+                if self.match_char('-') {
+                    self.add_token(TokenType::Decrement, None);
+                } else {
+                    self.add_token(TokenType::Minus, None);
+                }
+                Ok(())
+            }
             '0'..='9' => {
                 let mut is_valid_number = true;
                 while let Some(next_char) = self.peek() {
@@ -154,11 +166,11 @@ impl<'a> Lexer<'a> {
     //     let next_index = self.current + self.peek()?.len_utf8();
     //     self.source[next_index..].chars().next()
     // }
-    // fn match_char(&mut self, expected: char) -> bool {
-    //     if self.is_at_end() || self.peek() != Some(expected) {
-    //         return false;
-    //     }
-    //     self.advance();
-    //     true
-    // }
+    fn match_char(&mut self, expected: char) -> bool {
+        if self.is_at_end() || self.peek() != Some(expected) {
+            return false;
+        }
+        self.advance();
+        true
+    }
 }
