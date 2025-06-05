@@ -60,6 +60,11 @@ impl<'a> AssemblyGenerator<'a> {
                                 }
                             }
                         }
+                        _ => {
+                            return Err(CodegenError {
+                                message: "unsupport".to_string(),
+                            });
+                        }
                     }
                 } else {
                     Err(CodegenError {

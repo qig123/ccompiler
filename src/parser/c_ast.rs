@@ -13,7 +13,10 @@ pub struct Function {
 
 pub enum Expr {
     Literal(LiteralExpr),
+    Unary { operator: Token, right: Box<Expr> }, // Need Box for recursive type
+    Grouping { expression: Box<Expr> },          // Need Box for recursive type
 }
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum LiteralExpr {
     Integer(i64),

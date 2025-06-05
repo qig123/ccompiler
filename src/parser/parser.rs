@@ -73,22 +73,53 @@ impl<'a> Parser<'a> {
         })
     }
     fn parse_expression(&mut self) -> Result<Expr, ParserError> {
-        //这里表达式暂时只有一种, 就是数字常量int
-        // println!("Parsing expression: {:?}", token);
         if self.match_token(&[TokenType::LiteralInt]) {
             let prev = self.previous();
             match &prev.literal {
-                Some(value) => {
-                    let Value::Int(i) = value;
-                    Ok(Expr::Literal(LiteralExpr::Integer(i.clone())))
+                Some(Value::Int(i)) => {
+                    // Clone the integer value
+                    Ok(Expr::Literal(LiteralExpr::Integer(*i)))
                 }
                 None => {
-                    unreachable!("Literal token should have a value");
+                    // This should ideally not happen if the lexer correctly
+                    // attaches Value::Int to LiteralInt tokens.
+                    Err(ParserError {
+                        message: format!("Internal error: LiteralInt token missing value at "), // Assuming Token has position
+                    })
                 }
             }
+        // Check for <unop> ("-" or "~")
+        } else if self.match_token(&[TokenType::Minus, TokenType::BitwiseNot]) {
+            // Assuming TokenType::Minus and TokenType::Tilde exist
+            let operator_token = self.previous().clone(); // Keep the operator token
+
+            // Recursively parse the <exp> that follows the operator
+            let right_expr = self.parse_expression()?;
+
+            Ok(Expr::Unary {
+                operator: operator_token,
+                right: Box::new(right_expr), // Box the child expression
+            })
+
+        // Check for grouping "(" <exp> ")"
+        } else if self.match_token(&[TokenType::LeftParen]) {
+            // Recursively parse the <exp> inside the parentheses
+            let inner_expr = self.parse_expression()?;
+
+            // Consume the closing parenthesis
+            self.consume(TokenType::RightParen, "Expected ')' after expression")?;
+
+            Ok(Expr::Grouping {
+                expression: Box::new(inner_expr), // Box the child expression
+            })
+
+        // If none of the above match, it's a syntax error according to this grammar
         } else {
             Err(ParserError {
-                message: "Expected an integer literal".to_string(),
+                message: format!(
+                    "Expected an expression (integer, unary op, or grouping), but found '{}' ",
+                    self.peek().get_lexeme(self.source), // Get lexeme for error message
+                ),
             })
         }
     }
