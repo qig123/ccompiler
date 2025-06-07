@@ -1,8 +1,11 @@
 use crate::{
-    codegen::{assembly_emitter::CodeEmitter, assembly_ir::Assemble, codegen::AssemblyGenerator},
-    error::{CodegenError, CompilerError, ParserError},
+    codegen::{
+        assembly_emitter::CodeEmitter, assembly_ir::Assemble, codegen::TackyToAssemblyTranslator,
+    },
+    error::{CodegenError, CompilerError, ParserError, TackyError},
     lexer::{self, Token},
     parser::{c_ast::Program, parser::Parser},
+    tacky::gen_tacky::AstToTackyTranslator,
 };
 use std::{fs, path::Path};
 
@@ -31,9 +34,16 @@ impl CompilerDriver {
             Self::cleanup(&preprocessed_path);
             return Ok(());
         }
+        //先 clone吧，后期改
+        let tacky_ast = Self::translate_tacky(ast, &source)?;
+        if args.tacky {
+            println!("{:#?}", tacky_ast);
+            Self::cleanup(&preprocessed_path);
+            return Ok(());
+        }
 
         // 4. 代码生成
-        let asm = Self::codegen(ast, &source)?;
+        let asm = Self::codegen(tacky_ast)?;
         // 生成汇编文件
         let asm_output_path = args.input.with_extension("s");
         CodeEmitter::emit(&asm, &asm_output_path)?;
@@ -111,9 +121,16 @@ impl CompilerDriver {
         let mut parser = Parser::new(tokens, source);
         parser.parse()
     }
-    fn codegen<'a>(ast: Program, source: &'a str) -> Result<Assemble, CodegenError> {
-        let mut codegen = AssemblyGenerator::new(source);
-        codegen.generate(ast)
+    fn translate_tacky<'a>(
+        ast: Program,
+        source: &'a str,
+    ) -> Result<crate::tacky::tacky::Program, TackyError> {
+        let mut t = AstToTackyTranslator::new(source);
+        t.translate_program(ast)
+    }
+    fn codegen<'a>(ast: crate::tacky::tacky::Program) -> Result<Assemble, CodegenError> {
+        let mut codegen = TackyToAssemblyTranslator::new();
+        codegen.translate(ast)
     }
 
     fn assemble_and_link(input: &Path, output: &Path) -> Result<(), CompilerError> {

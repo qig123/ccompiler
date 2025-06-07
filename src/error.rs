@@ -18,6 +18,10 @@ pub struct CodegenError {
     pub message: String,
 }
 #[derive(Debug, PartialEq, Clone)]
+pub struct TackyError {
+    pub message: String,
+}
+#[derive(Debug, PartialEq, Clone)]
 
 pub struct CodeEmitterError {
     pub message: String,
@@ -30,6 +34,7 @@ pub enum CompilerError {
     Parser(ParserError),
     Codegen(CodegenError),
     CodeEmitter(CodeEmitterError),
+    Tacky(TackyError),
     Io(String), // 可以保留这个用于其他一般的文件I/O错误
     // 添加一个新的变体用于外部工具执行错误
     ExternalToolError(String),
@@ -53,6 +58,18 @@ impl From<ParserError> for CompilerError {
 impl From<CodegenError> for CompilerError {
     fn from(err: CodegenError) -> Self {
         CompilerError::Codegen(err)
+    }
+}
+// To make `CodeEmitterError` automatically convert to `CompilerError::CodeEmitter`,
+// implement the From trait:
+impl From<CodeEmitterError> for CompilerError {
+    fn from(err: CodeEmitterError) -> Self {
+        CompilerError::CodeEmitter(err)
+    }
+}
+impl From<TackyError> for CompilerError {
+    fn from(err: TackyError) -> Self {
+        CompilerError::Tacky(err)
     }
 }
 
@@ -81,6 +98,11 @@ impl fmt::Display for CodegenError {
         write!(f, "{}", self.message)
     }
 }
+impl fmt::Display for TackyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
 impl fmt::Display for CodeEmitterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.message)
@@ -93,6 +115,7 @@ impl fmt::Display for CompilerError {
             CompilerError::Lexer(err) => write!(f, "Lexer Error: {}", err),
             CompilerError::Parser(err) => write!(f, "Parser Error: {}", err),
             CompilerError::Codegen(err) => write!(f, "Codegen Error: {}", err),
+            CompilerError::Tacky(err) => write!(f, "Tacky Error: {}", err),
             CompilerError::CodeEmitter(err) => write!(f, "Code Emitter Error: {}", err),
             CompilerError::Io(msg) => write!(f, "IO Error: {}", msg),
             CompilerError::ExternalToolError(msg) => write!(f, "External Tool Error: {}", msg), // 添加这行
