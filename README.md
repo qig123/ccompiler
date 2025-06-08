@@ -3,7 +3,7 @@
 ## 📌 当前进度  
 ✅ **Chapter 1: A Minimal Compiler**  
 ✅ Chapter 2: UNARY OPERATORS  
-⬜ Chapter 3: BINARY OPERATORS  
+✅ Chapter 3: BINARY OPERATORS  
 ⬜ Chapter 4: LOGICAL AND RELATIONAL OPERATORS  
 
 ---
@@ -24,4 +24,4 @@ cargo build
 
 ./test_compiler ../ccompiler/target/debug/ccompiler --chapter 1 --stage lex
 ./test_compiler ../ccompiler/target/debug/ccompiler --chapter 2 --stage tacky
-./test_compiler ../ccompiler/target/debug/ccompiler --chapter 3 --stage lex
+./test_compiler ../ccompiler/target/debug/ccompiler --chapter 3 

@@ -1,22 +1,20 @@
-// codegen/emitter.rs (或者你 CodeEmitter 所在的模块)
+// codegen/emitter.rs
 
 use crate::codegen::assembly_ir::{
-    self as assembly_ir, // Re-export the module itself for clarity
-    Assemble,
-    Operand,
-    Reg,
+    self as assembly_ir, Assemble, BinaryOperator as AssBinaryOperator, Operand, Reg,
     UnaryOperator as AssUnaryOperator,
 };
-use crate::error::{CodeEmitterError, CompilerError};
+use crate::error::{CodeEmitterError, CompilerError}; // Ensure CodeEmitterError is accessible
 use std::fs::File;
 use std::io::Write;
+use std::path::Path; // Use Path instead of std::path::Path
 
 pub struct CodeEmitter;
 
 impl CodeEmitter {
     pub fn emit(
         assembly_ast: &Assemble,
-        output_path: &std::path::Path,
+        output_path: &Path, // Use Path
     ) -> Result<(), CompilerError> {
         let mut file = File::create(output_path).map_err(|e| {
             CompilerError::Io(format!(
@@ -27,22 +25,20 @@ impl CodeEmitter {
         })?;
 
         // Write file header and section directives
+        // Use path.file_name().and_then(|n| n.to_str()) for better error handling
+        let filename_str = output_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown_file"); // Provide a fallback if file name is invalid Unicode
+
         CodeEmitter::write_line(
             &mut file,
-            &format!(
-                "\t.file\t\"{}\"",
-                output_path
-                    .file_name()
-                    .unwrap_or_else(|| output_path.as_ref())
-                    .to_string_lossy()
-            ),
+            &format!("\t.file\t\"{}\"", filename_str),
             "Failed to write .file directive",
         )?;
         CodeEmitter::write_line(&mut file, "\t.text", "Failed to write .text directive")?;
-        CodeEmitter::write_line(&mut file, "", "Failed to write newline")?; // Blank line for clarity
+        CodeEmitter::write_line(&mut file, "", "Failed to write newline")?;
 
-        // Your Assemble AST holds only one function according to your ASDL
-        // We can iterate over a single-element slice or just access it directly.
         let function = &assembly_ast.function;
 
         // --- Emit Function Start ---
@@ -64,7 +60,6 @@ impl CodeEmitter {
         CodeEmitter::write_line(&mut file, "", "Failed to write newline")?;
 
         // --- Emit Function Prologue (Stack Frame Setup) ---
-        // Corresponds to: pushq %rbp; movq %rsp, %rbp
         CodeEmitter::write_line(&mut file, "\tpushq\t%rbp", "Failed to write pushq %rbp")?;
         CodeEmitter::write_line(
             &mut file,
@@ -73,31 +68,22 @@ impl CodeEmitter {
         )?;
 
         // --- Emit Function Body Instructions ---
-        // We iterate through the Assembly AST instructions
-        // let mut allocate_stack_seen = false; // Track if AllocateStack was emitted
         for instruction in &function.instructions {
             match instruction {
                 assembly_ir::Instruction::AllocateStack(size) => {
                     if *size > 0 {
-                        // Corresponds to: subq $size, %rsp
-                        // This instruction should appear after the frame setup if present.
-                        // If the translator correctly put it at the beginning of the list,
-                        // it will be emitted right after push/mov rbp.
+                        // This was already correct regarding the comma
                         CodeEmitter::write_line(
                             &mut file,
                             &format!("\tsubq\t${}, %rsp", size),
                             "Failed to write subq instruction",
                         )?;
-                        // allocate_stack_seen = true;
-                    } else {
-                        // No stack space needed, skip emitting subq
                     }
                 }
                 assembly_ir::Instruction::Mov { src, dst } => {
-                    // Translate operands and emit mov instruction
                     let src_str = CodeEmitter::operand_to_string(src)?;
                     let dst_str = CodeEmitter::operand_to_string(dst)?;
-                    // Use movl for 32-bit moves, consistent with -offsets and typical int size
+                    // This was already correct regarding the comma
                     CodeEmitter::write_line(
                         &mut file,
                         &format!("\tmovl\t{}, {}", src_str, dst_str),
@@ -105,12 +91,12 @@ impl CodeEmitter {
                     )?;
                 }
                 assembly_ir::Instruction::Unary { op, operand } => {
-                    // Translate operand and emit unary instruction
                     let operand_str = CodeEmitter::operand_to_string(operand)?;
                     let op_str = match op {
-                        AssUnaryOperator::Neg => "negl", // 32-bit negate
-                        AssUnaryOperator::Not => "notl", // 32-bit bitwise not
+                        AssUnaryOperator::Neg => "negl",
+                        AssUnaryOperator::Not => "notl",
                     };
+                    // Unary is single operand, no comma needed
                     CodeEmitter::write_line(
                         &mut file,
                         &format!("\t{}\t{}", op_str, operand_str),
@@ -118,17 +104,7 @@ impl CodeEmitter {
                     )?;
                 }
                 assembly_ir::Instruction::Ret => {
-                    // The Ret instruction in the AST marks the logical end of the function.
-                    // Before the final 'ret' opcode, we must emit the stack frame teardown.
-
-                    // --- Emit Function Epilogue (Stack Frame Teardown) ---
-                    // Corresponds to: movq %rbp, %rsp; popq %rbp
-                    // This recovers the stack space allocated by subq and restores the caller's rbp.
-                    // The check for allocate_stack_seen is technically not needed if using rbp,
-                    // as the movq %rbp, %rsp always brings the stack pointer back to the base,
-                    // cleaning up space regardless of whether subq was used.
-                    // However, explicitly adding back the allocated size (addq) can sometimes be
-                    // an alternative way to clean up, but movq %rbp, %rsp is standard with RBP.
+                    // The Ret instruction is where we place the epilogue
                     CodeEmitter::write_line(
                         &mut file,
                         "\tmovq\t%rbp, %rsp",
@@ -139,19 +115,53 @@ impl CodeEmitter {
                         "\tpopq\t%rbp",
                         "Failed to write popq %rbp",
                     )?;
-
-                    // --- Emit Final Return Opcode ---
                     CodeEmitter::write_line(&mut file, "\tret", "Failed to write RET instruction")?;
-
-                    // According to the conversion rules, Ret is the last logical instruction.
-                    // We might want to enforce that no more instructions follow this in the AST list.
-                    // For now, we just emit and the loop will continue if there are more (which would be wrong).
+                    // After ret, no more instructions should logically follow in the AST
                 }
-                _ => {
-                    println!("unsupport"); //todo
+                assembly_ir::Instruction::Binary {
+                    op,
+                    left_operand,
+                    right_operand,
+                } => {
+                    let left_operand_str = CodeEmitter::operand_to_string(left_operand)?;
+                    let right_operand_str = CodeEmitter::operand_to_string(right_operand)?;
+
+                    let op_str = match op {
+                        AssBinaryOperator::Add => "addl",
+                        AssBinaryOperator::Mult => "imull",
+                        AssBinaryOperator::Sub => "subl",
+                    };
+                    // *** FIX: Add comma between operands ***
+                    CodeEmitter::write_line(
+                        &mut file,
+                        &format!("\t{}\t{}, {}", op_str, left_operand_str, right_operand_str), // Added ", "
+                        "Failed to write Binary instruction",
+                    )?;
+                }
+                assembly_ir::Instruction::Idiv(operand) => {
+                    let operand_str = CodeEmitter::operand_to_string(operand)?;
+                    // Idiv is single operand, no comma needed
+                    CodeEmitter::write_line(
+                        &mut file,
+                        &format!("\tidivl\t{}", operand_str),
+                        "Failed to write Idiv instruction",
+                    )?;
+                }
+                assembly_ir::Instruction::Cdq => {
+                    // *** FIX: Remove trailing tab, though not an error cause ***
+                    CodeEmitter::write_line(
+                        &mut file,
+                        "\tcdq", // Removed trailing "\t"
+                        "Failed to write cdq instruction",
+                    )?;
                 }
             }
         }
+
+        // Note: If the last instruction was NOT Ret, the epilogue won't be emitted!
+        // A more robust emitter would ensure epilogue is always emitted before EOF,
+        // or rely on the translator ensuring Ret is the last instruction in the list.
+        // Assuming Ret is always last for simplicity based on your rules.
 
         // --- Emit Function End Directives ---
         CodeEmitter::write_line(&mut file, "", "Failed to write newline")?;
@@ -182,8 +192,7 @@ impl CodeEmitter {
                 Ok(format!("{}(%rbp)", offset))
             }
             Operand::Pseudo(id) => {
-                // Pseudoregisters should have been replaced by Stack operands in the previous pass.
-                // Encountering one here is an error in the compiler's intermediate stages.
+                // Pseudoregisters should have been replaced by Stack operands.
                 Err(CodeEmitterError {
                     message: format!(
                         "Internal error: Pseudoregister '{}' found in final Assembly AST. Pseudo-to-Stack pass failed?",
@@ -197,24 +206,16 @@ impl CodeEmitter {
     // Helper to translate a Reg AST node to AT&T assembly syntax string (32-bit)
     fn reg_to_string(reg: &Reg) -> String {
         match reg {
-            // Using 32-bit register names (eax, r10d) consistent with movl/negl/notl
-            // and 4-byte stack allocation. If targeting 64-bit exclusively, use rax, r10.
+            // Using 32-bit register names (%eax, %edx, %r10d, %r11d)
             Reg::AX => "%eax".to_string(),
+            Reg::DX => "%edx".to_string(),
             Reg::R10 => "%r10d".to_string(),
-            _ => {
-                todo!()
-            }
+            Reg::R11 => "%r11d".to_string(),
         }
     }
 
     // Helper to write a line to the file and handle potential IO errors
     fn write_line(file: &mut File, line: &str, context: &str) -> Result<(), CompilerError> {
-        writeln!(file, "{}", line).map_err(|e| {
-            CompilerError::Io(format!("{}: {}", context, e)) // Wrap IO error
-            // Or wrap in CodeEmitterError if your CompilerError structure is different
-            // CompilerError::CodeEmitter(CodeEmitterError {
-            //     message: format!("{}: {}", context, e),
-            // })
-        })
+        writeln!(file, "{}", line).map_err(|e| CompilerError::Io(format!("{}: {}", context, e)))
     }
 }
