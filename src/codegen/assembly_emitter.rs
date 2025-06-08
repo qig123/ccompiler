@@ -147,6 +147,9 @@ impl CodeEmitter {
                     // We might want to enforce that no more instructions follow this in the AST list.
                     // For now, we just emit and the loop will continue if there are more (which would be wrong).
                 }
+                _ => {
+                    println!("unsupport"); //todo
+                }
             }
         }
 
@@ -198,6 +201,9 @@ impl CodeEmitter {
             // and 4-byte stack allocation. If targeting 64-bit exclusively, use rax, r10.
             Reg::AX => "%eax".to_string(),
             Reg::R10 => "%r10d".to_string(),
+            _ => {
+                todo!()
+            }
         }
     }
 

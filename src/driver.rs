@@ -43,33 +43,32 @@ impl CompilerDriver {
 
         // 4. 代码生成
         let asm = Self::codegen(tacky_ast)?;
-        // 生成汇编文件
-        let asm_output_path = args.input.with_extension("s");
-        CodeEmitter::emit(&asm, &asm_output_path)?;
         if args.codegen {
             // 打印AST信息
             println!("");
             println!("[AST Debug]");
             println!("");
             println!("{:#?}", asm); // 使用 {:#?} 美化输出
-
-            // 打印生成的汇编代码
-            println!("\n[Generated Assembly]");
-            println!("");
-            println!("Output file: {}", asm_output_path.display());
-            match fs::read_to_string(&asm_output_path) {
-                Ok(asm_content) => {
-                    println!("");
-                    println!("{}", asm_content);
-                }
-                Err(e) => {
-                    println!("\n[Error] Failed to read assembly file:");
-                    println!("File: {}", asm_output_path.display());
-                    println!("Error: {}", e);
-                }
-            }
             Self::cleanup(&preprocessed_path);
             return Ok(());
+        }
+        // 生成汇编文件
+        let asm_output_path = args.input.with_extension("s");
+        CodeEmitter::emit(&asm, &asm_output_path)?;
+        //打印生成的汇编代码
+        println!("\n[Generated Assembly]");
+        println!("");
+        println!("Output file: {}", asm_output_path.display());
+        match fs::read_to_string(&asm_output_path) {
+            Ok(asm_content) => {
+                println!("");
+                println!("{}", asm_content);
+            }
+            Err(e) => {
+                println!("\n[Error] Failed to read assembly file:");
+                println!("File: {}", asm_output_path.display());
+                println!("Error: {}", e);
+            }
         }
         // 5. 汇编和链接
         let output_path = args.input.with_extension("");
