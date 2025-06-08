@@ -2,7 +2,7 @@
 
 ## 📌 当前进度  
 ✅ **Chapter 1: A Minimal Compiler**  
-⬜ Chapter 2: UNARY OPERATORS  
+✅ Chapter 2: UNARY OPERATORS  
 ⬜ Chapter 3: BINARY OPERATORS  
 ⬜ Chapter 4: LOGICAL AND RELATIONAL OPERATORS  
 
