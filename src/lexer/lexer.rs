@@ -66,6 +66,22 @@ impl<'a> Lexer<'a> {
                 self.add_token(TokenType::BitwiseNot, None);
                 Ok(())
             }
+            '+' => {
+                self.add_token(TokenType::Add, None);
+                Ok(())
+            }
+            '*' => {
+                self.add_token(TokenType::Mul, None);
+                Ok(())
+            }
+            '/' => {
+                self.add_token(TokenType::Div, None);
+                Ok(())
+            }
+            '%' => {
+                self.add_token(TokenType::Remaider, None);
+                Ok(())
+            }
             '-' => {
                 if self.match_char('-') {
                     self.add_token(TokenType::Decrement, None);
@@ -74,6 +90,7 @@ impl<'a> Lexer<'a> {
                 }
                 Ok(())
             }
+
             '0'..='9' => {
                 let mut is_valid_number = true;
                 while let Some(next_char) = self.peek() {

@@ -18,7 +18,12 @@ pub enum TokenType {
     BitwiseNot,    // ~
     Minus,         // -
     Decrement,     // --
-    Eof,           // End of file
+    Add,           //+
+    Mul,           //*
+    Div,
+    Remaider, //%
+
+    Eof, // End of file
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
