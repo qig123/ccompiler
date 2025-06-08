@@ -176,8 +176,13 @@ impl TackyToAssemblyTranslator {
                     op: ass_unary_op,
                     operand: dst_operand, // The operand to the Assembly Unary is the destination
                 });
-            } // Add translation for other TACKY Instruction types if needed
-              // _ => return Err(CodegenError { message: format!("Unsupported Tacky instruction: {:?}", instruction) }),
+            }
+            // Add translation for other TACKY Instruction types if needed
+            _ => {
+                return Err(CodegenError {
+                    message: format!("Unsupported Tacky instruction: {:?}", instruction),
+                });
+            }
         }
 
         Ok((asm_instructions, pseudos_found))

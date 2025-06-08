@@ -4,6 +4,15 @@ pub enum UnaryOperator {
     Complement, // 按位取反 (~)
     Negate,     // 算术取负 (-)
 }
+#[derive(Debug, PartialEq, Clone)]
+
+pub enum BinaryOperator {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+}
 
 // 2. val = Constant(int) | Var(identifier)
 #[derive(Debug, PartialEq, Clone)]
@@ -22,7 +31,12 @@ pub enum Instruction {
         src: Value,
         dst: Value,
     },
-    // 注意：ASDL 中没有明确的“赋值”指令 (dst = src) 或“常量加载”指令 (dst = constant)。
+    Binary {
+        op: BinaryOperator,
+        src1: Value,
+        src2: Value,
+        dst: Value,
+    },
     // 在这个最小的 IR 里，常量似乎只能作为 Unary 指令的 src。
     // Unary(Negate, Constant(2), Var("temp1")) 可以实现 temp1 = -2 的效果。
     // 如果需要 dst = src，可能需要引入一个新的指令变体，但这超出了给定的 ASDL 范围。

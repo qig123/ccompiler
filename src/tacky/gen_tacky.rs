@@ -4,13 +4,14 @@ use crate::lexer::token::TokenType;
 use crate::parser;
 use crate::{error::TackyError, tacky::tacky};
 use parser::c_ast::{
-    Expr as AstExpr, Function as AstFunction, LiteralExpr as AstLiteralExpr, Program as AstProgram,
-    Stmt as AstStmt,
+    BinaryOperator as AstBinaryOperator, Expr as AstExpr, Function as AstFunction,
+    LiteralExpr as AstLiteralExpr, Program as AstProgram, Stmt as AstStmt,
 };
 use std::vec::Vec;
 use tacky::{
-    FunctionDefinition as TackyFunctionDefinition, Instruction as TackyInstruction,
-    Program as TackyProgram, UnaryOperator as TackyUnaryOperator, Value as TackyValue,
+    BinaryOperator as TackyBinaryOperator, FunctionDefinition as TackyFunctionDefinition,
+    Instruction as TackyInstruction, Program as TackyProgram, UnaryOperator as TackyUnaryOperator,
+    Value as TackyValue,
 };
 
 // A helper to manage temporary variable names
@@ -177,6 +178,47 @@ impl<'a> AstToTackyTranslator<'a> {
                 // Grouping is just for parsing precedence, it doesn't create new instructions or change the value.
                 // Just translate the inner expression.
                 return self.translate_expr(*expression); // Directly return the result of the inner expression
+            }
+            AstExpr::Binary {
+                operator,
+                left,
+                right,
+            } => {
+                let (left_instructions, left_value) = self.translate_expr(*left)?;
+                let (right_instructions, right_value) = self.translate_expr(*right)?;
+                instructions.extend(left_instructions);
+                instructions.extend(right_instructions);
+
+                // Determine the TACKY binary operator
+                let tacky_op = match operator {
+                    AstBinaryOperator::Add => TackyBinaryOperator::Add,
+                    AstBinaryOperator::Multiply => TackyBinaryOperator::Multiply,
+                    AstBinaryOperator::Divide => TackyBinaryOperator::Divide,
+                    AstBinaryOperator::Subtract => TackyBinaryOperator::Subtract,
+                    AstBinaryOperator::Remainder => TackyBinaryOperator::Remainder,
+                    // _ => {
+                    //     return Err(TackyError {
+                    //         message: format!(
+                    //             "Unsupported AST binary operator token: {:?}",
+                    //             operator
+                    //         ),
+                    //     });
+                    // }
+                };
+
+                let temp_var_name = self.temp_generator.next();
+                let dest_value = TackyValue::Var(temp_var_name);
+
+                let binary_instruction = TackyInstruction::Binary {
+                    op: tacky_op,
+                    src1: left_value,
+                    src2: right_value,
+                    dst: dest_value.clone(),
+                };
+                instructions.push(binary_instruction);
+
+                // The result of this unary expression is the temporary variable
+                result_value = dest_value;
             }
         }
 

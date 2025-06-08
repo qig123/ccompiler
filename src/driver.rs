@@ -34,7 +34,6 @@ impl CompilerDriver {
             Self::cleanup(&preprocessed_path);
             return Ok(());
         }
-        //先 clone吧，后期改
         let tacky_ast = Self::translate_tacky(ast, &source)?;
         if args.tacky {
             println!("{:#?}", tacky_ast);

@@ -1,7 +1,7 @@
 use crate::{
     error::ParserError,
     lexer::{Token, token::TokenType},
-    parser::c_ast::{Expr, Function, LiteralExpr, Program, Stmt},
+    parser::c_ast::{BinaryOperator, Expr, Function, LiteralExpr, Program, Stmt},
     types::types::Value,
 };
 
@@ -73,28 +73,63 @@ impl<'a> Parser<'a> {
         })
     }
     fn parse_expression(&mut self) -> Result<Expr, ParserError> {
+        self.parse_precedence(0) // 从最低优先级开始
+    }
+    //<exp>       ::= <factor> | <exp> <binop> <exp>  // 二元表达式采用优先级爬升
+    fn parse_precedence(&mut self, min_precedence: u8) -> Result<Expr, ParserError> {
+        let mut left = self.parser_factor()?; // 先解析基本表达式（数字、括号、一元操作等）
+
+        loop {
+            let token = self.peek();
+
+            // 检查是否是二元运算符
+            let op = match token.token_type {
+                TokenType::Add => BinaryOperator::Add,
+                TokenType::Minus => BinaryOperator::Subtract,
+                TokenType::Mul => BinaryOperator::Multiply,
+                TokenType::Div => BinaryOperator::Divide,
+                TokenType::Remaider => BinaryOperator::Remainder,
+                _ => break, // 不是二元运算符，结束循环
+            };
+
+            // 检查当前运算符优先级是否足够高
+            if op.precedence() < min_precedence {
+                break;
+            }
+
+            self.advance(); // 消耗运算符token
+
+            // 递归解析右侧表达式，处理更高优先级的运算符
+            let right = self.parse_precedence(op.precedence() + 1)?;
+
+            left = Expr::Binary {
+                operator: op,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    //<factor>    ::= <int> | <unop> <factor> | "(" <exp> ")"  // 一元/括号表达式仍用递归下降
+    fn parser_factor(&mut self) -> Result<Expr, ParserError> {
         if self.match_token(&[TokenType::LiteralInt]) {
             let prev = self.previous();
             match &prev.literal {
-                Some(Value::Int(i)) => {
-                    // Clone the integer value
-                    Ok(Expr::Literal(LiteralExpr::Integer(*i)))
-                }
+                Some(Value::Int(i)) => Ok(Expr::Literal(LiteralExpr::Integer(*i))),
                 None => {
-                    // This should ideally not happen if the lexer correctly
-                    // attaches Value::Int to LiteralInt tokens.
                     Err(ParserError {
                         message: format!("Internal error: LiteralInt token missing value at "), // Assuming Token has position
                     })
                 }
             }
-        // Check for <unop> ("-" or "~")
         } else if self.match_token(&[TokenType::Minus, TokenType::BitwiseNot]) {
             // Assuming TokenType::Minus and TokenType::Tilde exist
             let operator_token = self.previous().clone(); // Keep the operator token
 
             // Recursively parse the <exp> that follows the operator
-            let right_expr = self.parse_expression()?;
+            let right_expr = self.parser_factor()?;
 
             Ok(Expr::Unary {
                 operator: operator_token,
