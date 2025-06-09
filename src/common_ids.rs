@@ -11,8 +11,8 @@ fn next_id() -> usize {
     id
 }
 
-pub fn generate_analysis_variable_name() -> String {
-    format!("v_{}", next_id())
+pub fn generate_analysis_variable_name(ori: String) -> String {
+    format!("{}.{}", ori, next_id())
 }
 
 pub fn generate_translator_temp_name() -> String {

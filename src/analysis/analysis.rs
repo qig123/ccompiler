@@ -2,8 +2,8 @@
 use crate::{common_ids, error::SemanticError, parser::c_ast::*};
 use std::collections::HashMap;
 
-fn generate_unique_variable_name() -> String {
-    common_ids::generate_analysis_variable_name()
+fn generate_unique_variable_name(ori: String) -> String {
+    common_ids::generate_analysis_variable_name(ori)
 }
 
 // Semantic Analyzer 结构体，可能需要持有对原始源代码的引用
@@ -98,7 +98,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
 
         // 伪代码 ❷: 生成唯一名称并添加到 map
-        let unique_name = generate_unique_variable_name();
+        let unique_name = generate_unique_variable_name(user_name.clone());
         variable_map.insert(user_name, unique_name.clone());
 
         // 伪代码 ❸: 解析初始化表达式 (如果存在)
