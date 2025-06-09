@@ -33,12 +33,27 @@ pub enum BinaryOperator {
     Multiply,
     Divide,
     Remainder,
+    And,
+    Or,
+    EqualEqual,
+    BangEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
 }
 impl BinaryOperator {
     pub fn precedence(&self) -> u8 {
         match self {
             BinaryOperator::Multiply | BinaryOperator::Divide | BinaryOperator::Remainder => 50,
             BinaryOperator::Add | BinaryOperator::Subtract => 45,
+            BinaryOperator::Less
+            | BinaryOperator::LessEqual
+            | BinaryOperator::Greater
+            | BinaryOperator::GreaterEqual => 35,
+            BinaryOperator::EqualEqual | BinaryOperator::BangEqual => 30,
+            BinaryOperator::And => 10,
+            BinaryOperator::Or => 5,
         }
     }
 }

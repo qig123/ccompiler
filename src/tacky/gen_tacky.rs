@@ -196,14 +196,14 @@ impl<'a> AstToTackyTranslator<'a> {
                     AstBinaryOperator::Divide => TackyBinaryOperator::Divide,
                     AstBinaryOperator::Subtract => TackyBinaryOperator::Subtract,
                     AstBinaryOperator::Remainder => TackyBinaryOperator::Remainder,
-                    // _ => {
-                    //     return Err(TackyError {
-                    //         message: format!(
-                    //             "Unsupported AST binary operator token: {:?}",
-                    //             operator
-                    //         ),
-                    //     });
-                    // }
+                    _ => {
+                        return Err(TackyError {
+                            message: format!(
+                                "Unsupported AST binary operator token: {:?}",
+                                operator
+                            ),
+                        });
+                    }
                 };
 
                 let temp_var_name = self.temp_generator.next();

@@ -89,6 +89,14 @@ impl<'a> Parser<'a> {
                 TokenType::Mul => BinaryOperator::Multiply,
                 TokenType::Div => BinaryOperator::Divide,
                 TokenType::Remainder => BinaryOperator::Remainder,
+                TokenType::And => BinaryOperator::And,
+                TokenType::Or => BinaryOperator::Or,
+                TokenType::EqualEqual => BinaryOperator::EqualEqual,
+                TokenType::BangEqual => BinaryOperator::BangEqual,
+                TokenType::Less => BinaryOperator::Less,
+                TokenType::LessEqual => BinaryOperator::LessEqual,
+                TokenType::Greater => BinaryOperator::Greater,
+                TokenType::GreaterEqual => BinaryOperator::GreaterEqual,
                 _ => break, // 不是二元运算符，结束循环
             };
 
@@ -124,7 +132,7 @@ impl<'a> Parser<'a> {
                     })
                 }
             }
-        } else if self.match_token(&[TokenType::Minus, TokenType::BitwiseNot]) {
+        } else if self.match_token(&[TokenType::Minus, TokenType::BitwiseNot, TokenType::Bang]) {
             // Assuming TokenType::Minus and TokenType::Tilde exist
             let operator_token = self.previous().clone(); // Keep the operator token
 
