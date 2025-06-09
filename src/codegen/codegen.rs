@@ -305,6 +305,11 @@ impl TackyToAssemblyTranslator {
                 let ass_unary_op = match op {
                     TackyUnaryOperator::Complement => AssUnaryOperator::Not,
                     TackyUnaryOperator::Negate => AssUnaryOperator::Neg,
+                    _ => {
+                        return Err(CodegenError {
+                            message: "unsupport op".to_string(),
+                        });
+                    }
                 };
                 asm_instructions.push(assembly_ir::Instruction::Unary {
                     op: ass_unary_op,
@@ -396,7 +401,17 @@ impl TackyToAssemblyTranslator {
                             dst: dst_operand,
                         });
                     }
+                    _ => {
+                        return Err(CodegenError {
+                            message: "unsupport op".to_string(),
+                        });
+                    }
                 };
+            }
+            _ => {
+                return Err(CodegenError {
+                    message: "unsupport op".to_string(),
+                });
             }
         }
 

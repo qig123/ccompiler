@@ -30,9 +30,25 @@ impl TempGenerator {
         name
     }
 }
+// A helper to manage label  names
+struct LabelGenerator {
+    counter: usize,
+}
 
+impl LabelGenerator {
+    fn new() -> Self {
+        LabelGenerator { counter: 0 }
+    }
+
+    fn next(&mut self) -> String {
+        let name = format!("label.{}", self.counter);
+        self.counter += 1;
+        name
+    }
+}
 pub struct AstToTackyTranslator<'a> {
     temp_generator: TempGenerator,
+    label_generator: LabelGenerator,
     source: &'a str,
     // Add other state if needed, like a symbol table
 }
@@ -41,6 +57,7 @@ impl<'a> AstToTackyTranslator<'a> {
     pub fn new(source: &'a str) -> Self {
         AstToTackyTranslator {
             temp_generator: TempGenerator::new(),
+            label_generator: LabelGenerator::new(),
             source: source,
         }
     }
@@ -137,7 +154,6 @@ impl<'a> AstToTackyTranslator<'a> {
 
         match ast_expr {
             AstExpr::Literal(AstLiteralExpr::Integer(i)) => {
-                // A literal doesn't require any instructions to compute, its value is inherent.
                 result_value = TackyValue::Constant(i);
             }
             AstExpr::Unary { operator, right } => {
@@ -148,7 +164,8 @@ impl<'a> AstToTackyTranslator<'a> {
                 // Determine the TACKY unary operator
                 let tacky_op = match operator.token_type {
                     TokenType::Minus => TackyUnaryOperator::Negate,
-                    TokenType::BitwiseNot => TackyUnaryOperator::Complement,
+                    TokenType::BitwiseNot => TackyUnaryOperator::Complement, // Assuming ~ maps to Complement
+                    TokenType::Bang => TackyUnaryOperator::Bang, // Assuming ! maps to Bang (logical NOT)
                     _ => {
                         return Err(TackyError {
                             message: format!(
@@ -184,47 +201,181 @@ impl<'a> AstToTackyTranslator<'a> {
                 left,
                 right,
             } => {
-                let (left_instructions, left_value) = self.translate_expr(*left)?;
-                let (right_instructions, right_value) = self.translate_expr(*right)?;
-                instructions.extend(left_instructions);
-                instructions.extend(right_instructions);
+                // We need a temporary variable to store the final result of the binary operation.
+                // This variable will be assigned in different branches (e.g., true/false for boolean ops)
+                // or hold the direct result of arithmetic/comparison ops.
+                let result_var_name = self.temp_generator.next();
+                let result_temp_value = TackyValue::Var(result_var_name); // This will be the returned TackyValue
 
-                // Determine the TACKY binary operator
-                let tacky_op = match operator {
-                    AstBinaryOperator::Add => TackyBinaryOperator::Add,
-                    AstBinaryOperator::Multiply => TackyBinaryOperator::Multiply,
-                    AstBinaryOperator::Divide => TackyBinaryOperator::Divide,
-                    AstBinaryOperator::Subtract => TackyBinaryOperator::Subtract,
-                    AstBinaryOperator::Remainder => TackyBinaryOperator::Remainder,
-                    _ => {
-                        return Err(TackyError {
-                            message: format!(
-                                "Unsupported AST binary operator token: {:?}",
-                                operator
-                            ),
-                        });
-                    }
-                };
+                if operator == AstBinaryOperator::And {
+                    // Translate left side
+                    let (left_instructions, left_value) = self.translate_expr(*left)?;
+                    instructions.extend(left_instructions);
 
-                let temp_var_name = self.temp_generator.next();
-                let dest_value = TackyValue::Var(temp_var_name);
+                    // --- Short-circuiting for AND (A && B) ---
+                    // If left is 0 (false), jump directly to the end and set result to 0.
+                    // Otherwise, continue to evaluate the right side.
+                    let false_label_name = self.label_generator.next();
+                    let end_label_name = self.label_generator.next();
 
-                let binary_instruction = TackyInstruction::Binary {
-                    op: tacky_op,
-                    src1: left_value,
-                    src2: right_value,
-                    dst: dest_value.clone(),
-                };
-                instructions.push(binary_instruction);
+                    // If left_value is 0, jump to the false case label
+                    instructions.push(TackyInstruction::JumpIfZero {
+                        condition: left_value,
+                        target: false_label_name.clone(),
+                    });
 
-                // The result of this unary expression is the temporary variable
-                result_value = dest_value;
+                    // Translate right side (only executed if left_value is non-zero)
+                    let (right_instructions, right_value) = self.translate_expr(*right)?;
+                    instructions.extend(right_instructions);
+
+                    // If right_value is 0, jump to the false case label
+                    instructions.push(TackyInstruction::JumpIfZero {
+                        condition: right_value,
+                        target: false_label_name.clone(),
+                    });
+
+                    // If we reach here, both left and right were non-zero (true).
+                    // Set the result variable to 1.
+                    instructions.push(TackyInstruction::Copy {
+                        src: TackyValue::Constant(1),
+                        dst: result_temp_value.clone(),
+                    });
+
+                    // Jump to the end label to skip the false case assignment.
+                    instructions.push(TackyInstruction::Jump {
+                        target: end_label_name.clone(),
+                    });
+
+                    // --- False Case Label ---
+                    // This is where execution jumps if either left or right was 0.
+                    instructions.push(TackyInstruction::Lable {
+                        name: false_label_name,
+                    });
+
+                    // Set the result variable to 0.
+                    instructions.push(TackyInstruction::Copy {
+                        src: TackyValue::Constant(0),
+                        dst: result_temp_value.clone(),
+                    });
+
+                    // --- End Label ---
+                    // This is the merge point after the boolean logic.
+                    instructions.push(TackyInstruction::Lable {
+                        name: end_label_name,
+                    });
+
+                    // The result of the AND expression is stored in result_temp_value.
+                    result_value = result_temp_value;
+                } else if operator == AstBinaryOperator::Or {
+                    // Translate left side
+                    let (left_instructions, left_value) = self.translate_expr(*left)?;
+                    instructions.extend(left_instructions);
+
+                    // --- Short-circuiting for OR (A || B) ---
+                    // If left is non-zero (true), jump directly to the end and set result to 1.
+                    // Otherwise, continue to evaluate the right side.
+                    let true_label_name = self.label_generator.next();
+                    let end_label_name = self.label_generator.next();
+
+                    // If left_value is non-zero, jump to the true case label
+                    instructions.push(TackyInstruction::JumpIfNotZero {
+                        condition: left_value,
+                        target: true_label_name.clone(),
+                    });
+
+                    // Translate right side (only executed if left_value is 0)
+                    let (right_instructions, right_value) = self.translate_expr(*right)?;
+                    instructions.extend(right_instructions);
+
+                    // If right_value is non-zero, jump to the true case label
+                    instructions.push(TackyInstruction::JumpIfNotZero {
+                        condition: right_value,
+                        target: true_label_name.clone(),
+                    });
+
+                    // If we reach here, both left and right were 0 (false).
+                    // Set the result variable to 0.
+                    instructions.push(TackyInstruction::Copy {
+                        src: TackyValue::Constant(0),
+                        dst: result_temp_value.clone(),
+                    });
+
+                    // Jump to the end label to skip the true case assignment.
+                    instructions.push(TackyInstruction::Jump {
+                        target: end_label_name.clone(),
+                    });
+
+                    // --- True Case Label ---
+                    // This is where execution jumps if either left or right was non-zero.
+                    instructions.push(TackyInstruction::Lable {
+                        name: true_label_name,
+                    });
+
+                    // Set the result variable to 1.
+                    instructions.push(TackyInstruction::Copy {
+                        src: TackyValue::Constant(1),
+                        dst: result_temp_value.clone(),
+                    });
+
+                    // --- End Label ---
+                    // This is the merge point after the boolean logic.
+                    instructions.push(TackyInstruction::Lable {
+                        name: end_label_name,
+                    });
+
+                    // The result of the OR expression is stored in result_temp_value.
+                    result_value = result_temp_value;
+                } else {
+                    // Handle other binary operators (arithmetic, comparison)
+
+                    // Translate both sides first
+                    let (left_instructions, left_value) = self.translate_expr(*left)?;
+                    let (right_instructions, right_value) = self.translate_expr(*right)?;
+                    instructions.extend(left_instructions);
+                    instructions.extend(right_instructions);
+
+                    // Determine the TACKY binary operator
+                    let tacky_op = match operator {
+                        AstBinaryOperator::Add => TackyBinaryOperator::Add,
+                        AstBinaryOperator::Multiply => TackyBinaryOperator::Multiply,
+                        AstBinaryOperator::Divide => TackyBinaryOperator::Divide,
+                        AstBinaryOperator::Subtract => TackyBinaryOperator::Subtract,
+                        AstBinaryOperator::Remainder => TackyBinaryOperator::Remainder,
+                        AstBinaryOperator::EqualEqual => TackyBinaryOperator::EqualEqual,
+                        AstBinaryOperator::Less => TackyBinaryOperator::Less,
+                        AstBinaryOperator::LessEqual => TackyBinaryOperator::LessEqual,
+                        AstBinaryOperator::Greater => TackyBinaryOperator::Greater,
+                        AstBinaryOperator::GreaterEqual => TackyBinaryOperator::GreaterEqual,
+                        AstBinaryOperator::BangEqual => TackyBinaryOperator::BangEqual,
+                        // Logical AND/OR are handled above
+                        AstBinaryOperator::And | AstBinaryOperator::Or => {
+                            // This should not be reached because And/Or are handled above,
+                            // but good to have a fallback or error here.
+                            return Err(TackyError {
+                                message: format!(
+                                    "Logical AND/OR should have been handled by short-circuit logic, but fell through here: {:?}",
+                                    operator
+                                ),
+                            });
+                        }
+                    };
+
+                    // Generate the TACKY Binary instruction: result_temp_value = src1 op src2
+                    let binary_instruction = TackyInstruction::Binary {
+                        op: tacky_op,
+                        src1: left_value,
+                        src2: right_value,
+                        dst: result_temp_value.clone(), // Store result in our temp variable
+                    };
+                    instructions.push(binary_instruction);
+
+                    // The result of this expression is the temporary variable
+                    result_value = result_temp_value;
+                }
             }
         }
-
         Ok((instructions, result_value))
     }
-
     // Helper to map AST Token to Tacky UnaryOperator (already done within translate_expr)
     // fn map_unary_operator(token: &Token) -> Result<TackyUnaryOperator, String> {
     //     match token.token_type {
