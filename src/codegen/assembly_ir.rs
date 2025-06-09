@@ -28,6 +28,15 @@ pub enum Operand {
     Pseudo(String), // Pseudoregister (temporary, will be replaced by Stack)
     Stack(i64),     // Stack address (offset relative to RBP)
 }
+#[derive(Debug, PartialEq, Clone)]
+pub enum Condition {
+    E,  // Equal
+    NE, // Not Equal
+    L,  // Less
+    LE, // Less or Equal
+    G,  // Greater
+    GE, // Greater or Equal
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Instruction {
@@ -45,8 +54,22 @@ pub enum Instruction {
         left_operand: Operand,
         right_operand: Operand,
     },
+    Cmp {
+        left_operand: Operand,
+        right_operand: Operand,
+    },
     Idiv(Operand),
     Cdq,
+    Jmp(String), // Unconditional jump to label
+    JmpCC {
+        condition: Condition, // Condition like "z" for zero, "nz" for not zero, etc.
+        target: String,       // Target label to jump to
+    },
+    SetCC {
+        condition: Condition, // Condition like "z" for zero, "nz" for not zero, etc.
+        dst: Operand,         // Destination operand to set
+    },
+    Label(String),      // Define a label
     AllocateStack(i64), // Allocate space on the stack (argument is the positive size needed)
     Ret,                // Return from function
 }

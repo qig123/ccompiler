@@ -61,7 +61,7 @@ pub enum Instruction {
         condition: Value,
         target: String,
     },
-    Lable {
+    Label {
         name: String,
     },
     // 在这个最小的 IR 里，常量似乎只能作为 Unary 指令的 src。

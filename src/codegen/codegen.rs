@@ -221,6 +221,32 @@ impl TackyToAssemblyTranslator {
                         }
                     }
                 }
+                //fix Cmp(Stack, Stack)
+                Instruction::Cmp {
+                    left_operand,
+                    right_operand,
+                } => {
+                    match (&left_operand, &right_operand) {
+                        (Operand::Stack(_), Operand::Stack(_)) => {
+                            // Rule: Cmp(Stack, Stack) => Mov(Stack, R10); Cmp(R10, Stack)
+                            final_assembly_instructions.push(assembly_ir::Instruction::Mov {
+                                src: left_operand.clone(), // Clone source Stack operand
+                                dst: assembly_ir::Operand::Reg(assembly_ir::Reg::R10), // Use R10 for temp
+                            });
+                            final_assembly_instructions.push(assembly_ir::Instruction::Cmp {
+                                left_operand: assembly_ir::Operand::Reg(assembly_ir::Reg::R10),
+                                right_operand: right_operand.clone(), // Clone destination Stack operand
+                            });
+                        }
+                        // Cmp(Imm/Reg, Stack) and Cmp(Stack, Reg) are valid, pass through ,注意这里的 // Cmp(?, Imm) 是不合法的
+                        _ => {
+                            final_assembly_instructions.push(assembly_ir::Instruction::Cmp {
+                                left_operand,
+                                right_operand,
+                            });
+                        }
+                    }
+                }
 
                 // --- Pass through other instructions that don't need specific fixing in this pass ---
                 // Mov instructions other than Stack -> Stack are fine (e.g., Imm->Stack, Reg->Stack, Stack->Reg, Imm->Reg, Reg->Reg)
@@ -242,6 +268,21 @@ impl TackyToAssemblyTranslator {
                 // AllocateStack is handled at the beginning, but passing it here is harmless
                 // (it won't be in the input list `stack_replaced_instructions` anyway if added only at the start)
                 inst @ Instruction::AllocateStack(_) => {
+                    final_assembly_instructions.push(inst);
+                }
+                // Jmp and JmpCC are fine
+                inst @ Instruction::Jmp(_) => {
+                    final_assembly_instructions.push(inst);
+                }
+                inst @ Instruction::JmpCC { .. } => {
+                    final_assembly_instructions.push(inst);
+                }
+                // Labels are fine
+                inst @ Instruction::Label(_) => {
+                    final_assembly_instructions.push(inst);
+                }
+                //SetCC is fine
+                inst @ Instruction::SetCC { .. } => {
                     final_assembly_instructions.push(inst);
                 }
             }
@@ -288,33 +329,63 @@ impl TackyToAssemblyTranslator {
                 asm_instructions.push(assembly_ir::Instruction::Ret);
             }
             TackyInstruction::Unary { op, src, dst } => {
-                // Rule: Unary(unary_operator, src, dst) => Mov(src, dst), Unary(unary_operator, dst)
-                collect_pseudo(&src, &mut pseudos_found);
-                collect_pseudo(&dst, &mut pseudos_found);
+                match op {
+                    TackyUnaryOperator::Complement | TackyUnaryOperator::Negate => {
+                        // Rule: Unary(unary_operator, src, dst) => Mov(src, dst), Unary(unary_operator, dst)
+                        collect_pseudo(&src, &mut pseudos_found);
+                        collect_pseudo(&dst, &mut pseudos_found);
 
-                let src_operand = self.translate_tacky_value(&src)?;
-                let dst_operand = self.translate_tacky_value(&dst)?;
+                        let src_operand = self.translate_tacky_value(&src)?;
+                        let dst_operand = self.translate_tacky_value(&dst)?;
 
-                // First: Mov src to dst
-                asm_instructions.push(assembly_ir::Instruction::Mov {
-                    src: src_operand,
-                    dst: dst_operand.clone(), // Clone dst because it's used again in the next instruction
-                });
+                        // First: Mov src to dst
+                        asm_instructions.push(assembly_ir::Instruction::Mov {
+                            src: src_operand,
+                            dst: dst_operand.clone(), // Clone dst because it's used again in the next instruction
+                        });
 
-                // Second: Perform Unary operation on dst (in-place)
-                let ass_unary_op = match op {
-                    TackyUnaryOperator::Complement => AssUnaryOperator::Not,
-                    TackyUnaryOperator::Negate => AssUnaryOperator::Neg,
-                    _ => {
-                        return Err(CodegenError {
-                            message: "unsupport op".to_string(),
+                        // Second: Perform Unary operation on dst (in-place)
+                        let ass_unary_op = match op {
+                            TackyUnaryOperator::Complement => AssUnaryOperator::Not,
+                            TackyUnaryOperator::Negate => AssUnaryOperator::Neg,
+                            _ => {
+                                return Err(CodegenError {
+                                    message: "unsupport op".to_string(),
+                                });
+                            }
+                        };
+                        asm_instructions.push(assembly_ir::Instruction::Unary {
+                            op: ass_unary_op,
+                            operand: dst_operand, // The operand to the Assembly Unary is the destination
                         });
                     }
-                };
-                asm_instructions.push(assembly_ir::Instruction::Unary {
-                    op: ass_unary_op,
-                    operand: dst_operand, // The operand to the Assembly Unary is the destination
-                });
+                    TackyUnaryOperator::Bang => {
+                        //Rule: Unary(Not, src, dst)=> Cmp(Imm(0),arc) Mov(Imm(0),dst),SetCC(E,dst)
+                        collect_pseudo(&src, &mut pseudos_found);
+                        collect_pseudo(&dst, &mut pseudos_found);
+
+                        let src_operand = self.translate_tacky_value(&src)?;
+                        let dst_operand = self.translate_tacky_value(&dst)?;
+                        let cmp = assembly_ir::Instruction::Cmp {
+                            left_operand: assembly_ir::Operand::Imm(0),
+                            right_operand: src_operand,
+                        };
+                        asm_instructions.push(cmp);
+                        let mov = assembly_ir::Instruction::Mov {
+                            src: assembly_ir::Operand::Imm(0),
+                            dst: dst_operand.clone(),
+                        };
+                        asm_instructions.push(mov);
+                        asm_instructions.push(assembly_ir::Instruction::SetCC {
+                            condition: assembly_ir::Condition::E,
+                            dst: dst_operand,
+                        });
+                    } // _ => {
+                      //     return Err(CodegenError {
+                      //         message: "unsupported unary operator".to_string(),
+                      //     });
+                      // }
+                }
             } // Add translation for other TACKY Instruction types if needed
             TackyInstruction::Binary {
                 op,
@@ -322,97 +393,200 @@ impl TackyToAssemblyTranslator {
                 src2,
                 dst,
             } => {
-                collect_pseudo(&src1, &mut pseudos_found);
-                collect_pseudo(&src2, &mut pseudos_found);
+                match op {
+                    TackyBinaryOperator::Add
+                    | TackyBinaryOperator::Subtract
+                    | TackyBinaryOperator::Multiply
+                    | TackyBinaryOperator::Divide
+                    | TackyBinaryOperator::Remainder => {
+                        collect_pseudo(&src1, &mut pseudos_found);
+                        collect_pseudo(&src2, &mut pseudos_found);
+                        collect_pseudo(&dst, &mut pseudos_found);
+
+                        let src1_operand = self.translate_tacky_value(&src1)?;
+                        let src2_operand = self.translate_tacky_value(&src2)?;
+                        let dst_operand = self.translate_tacky_value(&dst)?;
+
+                        // Second: Perform Binary operation on dst (in-place)
+                        match op {
+                            TackyBinaryOperator::Add => {
+                                // First: Mov src1 to dst
+                                asm_instructions.push(assembly_ir::Instruction::Mov {
+                                    src: src1_operand,
+                                    dst: dst_operand.clone(), // Clone dst because it's used again in the next instruction
+                                });
+                                asm_instructions.push(assembly_ir::Instruction::Binary {
+                                    op: AssBinaryOperator::Add,
+                                    left_operand: src2_operand,
+                                    right_operand: dst_operand,
+                                });
+                            }
+                            TackyBinaryOperator::Subtract => {
+                                // First: Mov src1 to dst
+                                asm_instructions.push(assembly_ir::Instruction::Mov {
+                                    src: src1_operand,
+                                    dst: dst_operand.clone(), // Clone dst because it's used again in the next instruction
+                                });
+                                asm_instructions.push(assembly_ir::Instruction::Binary {
+                                    op: AssBinaryOperator::Sub,
+                                    left_operand: src2_operand,
+                                    right_operand: dst_operand,
+                                });
+                            }
+                            TackyBinaryOperator::Multiply => {
+                                // First: Mov src1 to dst
+                                asm_instructions.push(assembly_ir::Instruction::Mov {
+                                    src: src1_operand,
+                                    dst: dst_operand.clone(), // Clone dst because it's used again in the next instruction
+                                });
+                                asm_instructions.push(assembly_ir::Instruction::Binary {
+                                    op: AssBinaryOperator::Mult,
+                                    left_operand: src2_operand,
+                                    right_operand: dst_operand,
+                                });
+                            }
+                            //div 指令不能对立即值进行作，因此如果 src2 是常量，则 division 和 remaining 的汇编指令将无效,会在稍后的流程修复
+                            TackyBinaryOperator::Divide => {
+                                //Mov(src1, Reg(AX))
+                                asm_instructions.push(assembly_ir::Instruction::Mov {
+                                    src: src1_operand,
+                                    dst: Operand::Reg(assembly_ir::Reg::AX),
+                                });
+                                //Cdq
+                                asm_instructions.push(Instruction::Cdq);
+                                //Idiv(src2)
+                                asm_instructions.push(Instruction::Idiv(src2_operand));
+                                //Mov(Reg(AX), dst)
+                                asm_instructions.push(assembly_ir::Instruction::Mov {
+                                    src: Operand::Reg(assembly_ir::Reg::AX),
+                                    dst: dst_operand,
+                                });
+                            }
+                            TackyBinaryOperator::Remainder => {
+                                //Mov(src1, Reg(AX))
+                                asm_instructions.push(assembly_ir::Instruction::Mov {
+                                    src: src1_operand,
+                                    dst: Operand::Reg(assembly_ir::Reg::AX),
+                                });
+                                //Cdq
+                                asm_instructions.push(Instruction::Cdq);
+                                //Idiv(src2)
+                                asm_instructions.push(Instruction::Idiv(src2_operand));
+                                //Mov(Reg(AX), dst)
+                                asm_instructions.push(assembly_ir::Instruction::Mov {
+                                    src: Operand::Reg(assembly_ir::Reg::DX),
+                                    dst: dst_operand,
+                                });
+                            }
+                            _ => {
+                                return Err(CodegenError {
+                                    message: "unsupport op".to_string(),
+                                });
+                            }
+                        };
+                    }
+                    TackyBinaryOperator::EqualEqual
+                    | TackyBinaryOperator::BangEqual
+                    | TackyBinaryOperator::Less
+                    | TackyBinaryOperator::LessEqual
+                    | TackyBinaryOperator::Greater
+                    | TackyBinaryOperator::GreaterEqual => {
+                        //Rule : Binary(op, src1, src2, dst) => Cmp(src2, src1), Mov(Imm(0), dst), SetCC(op, dst)
+                        collect_pseudo(&src1, &mut pseudos_found);
+                        collect_pseudo(&src2, &mut pseudos_found);
+                        collect_pseudo(&dst, &mut pseudos_found);
+
+                        let src1_operand = self.translate_tacky_value(&src1)?;
+                        let src2_operand = self.translate_tacky_value(&src2)?;
+                        let dst_operand = self.translate_tacky_value(&dst)?;
+                        // First: Compare src1 and src2
+                        asm_instructions.push(assembly_ir::Instruction::Cmp {
+                            left_operand: src2_operand,
+                            right_operand: src1_operand,
+                        });
+                        // Second: Move 0 to dst
+                        asm_instructions.push(assembly_ir::Instruction::Mov {
+                            src: assembly_ir::Operand::Imm(0),
+                            dst: dst_operand.clone(), // Clone dst because it's used again in the next instruction
+                        });
+                        // Third: Set condition code based on the comparison
+                        let condition = match op {
+                            TackyBinaryOperator::EqualEqual => assembly_ir::Condition::E,
+                            TackyBinaryOperator::BangEqual => assembly_ir::Condition::NE,
+                            TackyBinaryOperator::Less => assembly_ir::Condition::L,
+                            TackyBinaryOperator::LessEqual => assembly_ir::Condition::LE,
+                            TackyBinaryOperator::Greater => assembly_ir::Condition::G,
+                            TackyBinaryOperator::GreaterEqual => assembly_ir::Condition::GE,
+                            _ => {
+                                return Err(CodegenError {
+                                    message: "unsupported binary operator".to_string(),
+                                });
+                            }
+                        };
+                        asm_instructions.push(assembly_ir::Instruction::SetCC {
+                            condition,
+                            dst: dst_operand, // The destination for the SetCC is the same as the original dst
+                        });
+                    } // _ => {
+                      //     return Err(CodegenError {
+                      //         message: "unsupported binary operator".to_string(),
+                      //     });
+                      // }
+                }
+            }
+            TackyInstruction::Copy { src, dst } => {
+                // Rule: Copy(src, dst) => Mov(src, dst)
+                collect_pseudo(&src, &mut pseudos_found);
                 collect_pseudo(&dst, &mut pseudos_found);
 
-                let src1_operand = self.translate_tacky_value(&src1)?;
-                let src2_operand = self.translate_tacky_value(&src2)?;
+                let src_operand = self.translate_tacky_value(&src)?;
                 let dst_operand = self.translate_tacky_value(&dst)?;
 
-                // Second: Perform Binary operation on dst (in-place)
-                match op {
-                    TackyBinaryOperator::Add => {
-                        // First: Mov src1 to dst
-                        asm_instructions.push(assembly_ir::Instruction::Mov {
-                            src: src1_operand,
-                            dst: dst_operand.clone(), // Clone dst because it's used again in the next instruction
-                        });
-                        asm_instructions.push(assembly_ir::Instruction::Binary {
-                            op: AssBinaryOperator::Add,
-                            left_operand: src2_operand,
-                            right_operand: dst_operand,
-                        });
-                    }
-                    TackyBinaryOperator::Subtract => {
-                        // First: Mov src1 to dst
-                        asm_instructions.push(assembly_ir::Instruction::Mov {
-                            src: src1_operand,
-                            dst: dst_operand.clone(), // Clone dst because it's used again in the next instruction
-                        });
-                        asm_instructions.push(assembly_ir::Instruction::Binary {
-                            op: AssBinaryOperator::Sub,
-                            left_operand: src2_operand,
-                            right_operand: dst_operand,
-                        });
-                    }
-                    TackyBinaryOperator::Multiply => {
-                        // First: Mov src1 to dst
-                        asm_instructions.push(assembly_ir::Instruction::Mov {
-                            src: src1_operand,
-                            dst: dst_operand.clone(), // Clone dst because it's used again in the next instruction
-                        });
-                        asm_instructions.push(assembly_ir::Instruction::Binary {
-                            op: AssBinaryOperator::Mult,
-                            left_operand: src2_operand,
-                            right_operand: dst_operand,
-                        });
-                    }
-                    //div 指令不能对立即值进行作，因此如果 src2 是常量，则 division 和 remaining 的汇编指令将无效,会在稍后的流程修复
-                    TackyBinaryOperator::Divide => {
-                        //Mov(src1, Reg(AX))
-                        asm_instructions.push(assembly_ir::Instruction::Mov {
-                            src: src1_operand,
-                            dst: Operand::Reg(assembly_ir::Reg::AX),
-                        });
-                        //Cdq
-                        asm_instructions.push(Instruction::Cdq);
-                        //Idiv(src2)
-                        asm_instructions.push(Instruction::Idiv(src2_operand));
-                        //Mov(Reg(AX), dst)
-                        asm_instructions.push(assembly_ir::Instruction::Mov {
-                            src: Operand::Reg(assembly_ir::Reg::AX),
-                            dst: dst_operand,
-                        });
-                    }
-                    TackyBinaryOperator::Remainder => {
-                        //Mov(src1, Reg(AX))
-                        asm_instructions.push(assembly_ir::Instruction::Mov {
-                            src: src1_operand,
-                            dst: Operand::Reg(assembly_ir::Reg::AX),
-                        });
-                        //Cdq
-                        asm_instructions.push(Instruction::Cdq);
-                        //Idiv(src2)
-                        asm_instructions.push(Instruction::Idiv(src2_operand));
-                        //Mov(Reg(AX), dst)
-                        asm_instructions.push(assembly_ir::Instruction::Mov {
-                            src: Operand::Reg(assembly_ir::Reg::DX),
-                            dst: dst_operand,
-                        });
-                    }
-                    _ => {
-                        return Err(CodegenError {
-                            message: "unsupport op".to_string(),
-                        });
-                    }
-                };
-            }
-            _ => {
-                return Err(CodegenError {
-                    message: "unsupport op".to_string(),
+                asm_instructions.push(assembly_ir::Instruction::Mov {
+                    src: src_operand,
+                    dst: dst_operand,
                 });
             }
+            TackyInstruction::Jump { target } => {
+                // Rule: Jump(target) => Jmp(target)
+                asm_instructions.push(assembly_ir::Instruction::Jmp(target));
+            }
+            TackyInstruction::JumpIfZero { condition, target } => {
+                // Rule: JumpIfZero(condition, target) => Cmp(condition, Imm(0)), JmpCC(E, target)
+                collect_pseudo(&condition, &mut pseudos_found);
+
+                let condition_operand = self.translate_tacky_value(&condition)?;
+                asm_instructions.push(assembly_ir::Instruction::Cmp {
+                    left_operand: condition_operand,
+                    right_operand: assembly_ir::Operand::Imm(0),
+                });
+                asm_instructions.push(assembly_ir::Instruction::JmpCC {
+                    condition: assembly_ir::Condition::E,
+                    target,
+                });
+            }
+            TackyInstruction::JumpIfNotZero { condition, target } => {
+                // Rule: JumpIfNotZero(condition, target) => Cmp(condition, Imm(0)), JmpCC(NE, target)
+                collect_pseudo(&condition, &mut pseudos_found);
+
+                let condition_operand = self.translate_tacky_value(&condition)?;
+                asm_instructions.push(assembly_ir::Instruction::Cmp {
+                    left_operand: condition_operand,
+                    right_operand: assembly_ir::Operand::Imm(0),
+                });
+                asm_instructions.push(assembly_ir::Instruction::JmpCC {
+                    condition: assembly_ir::Condition::NE,
+                    target,
+                });
+            }
+            TackyInstruction::Label { name } => {
+                // Rule: Label(name) => Jmp(name) // Labels are just markers, no Assembly instruction needed
+                asm_instructions.push(assembly_ir::Instruction::Label(name));
+            } // _ => {
+              //     return Err(CodegenError {
+              //         message: "unsupport op".to_string(),
+              //     });
+              // }
         }
 
         Ok((asm_instructions, pseudos_found))
@@ -487,11 +661,32 @@ impl TackyToAssemblyTranslator {
                 let new_operand: Operand = replace_operand(operand, &self.pseudo_to_stack_offset)?;
                 Ok(assembly_ir::Instruction::Idiv(new_operand))
             }
+            Instruction::Cmp {
+                left_operand,
+                right_operand,
+            } => {
+                let new_left = replace_operand(left_operand, &self.pseudo_to_stack_offset)?;
+                let new_right = replace_operand(right_operand, &self.pseudo_to_stack_offset)?;
+                Ok(assembly_ir::Instruction::Cmp {
+                    left_operand: new_left,
+                    right_operand: new_right,
+                })
+            }
+            Instruction::SetCC { condition, dst } => {
+                let new_dst = replace_operand(dst, &self.pseudo_to_stack_offset)?;
+                Ok(assembly_ir::Instruction::SetCC {
+                    condition,
+                    dst: new_dst,
+                })
+            }
 
             // AllocateStack and Ret instructions have no operands to replace in this step
             inst @ assembly_ir::Instruction::AllocateStack(_)
             | inst @ assembly_ir::Instruction::Ret => Ok(inst),
             inst @ assembly_ir::Instruction::Cdq => Ok(inst),
+            inst @ assembly_ir::Instruction::Jmp(_) => Ok(inst),
+            inst @ assembly_ir::Instruction::JmpCC { .. } => Ok(inst),
+            inst @ assembly_ir::Instruction::Label(_) => Ok(inst),
         }
     }
 }

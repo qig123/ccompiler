@@ -248,7 +248,7 @@ impl<'a> AstToTackyTranslator<'a> {
 
                     // --- False Case Label ---
                     // This is where execution jumps if either left or right was 0.
-                    instructions.push(TackyInstruction::Lable {
+                    instructions.push(TackyInstruction::Label {
                         name: false_label_name,
                     });
 
@@ -260,7 +260,7 @@ impl<'a> AstToTackyTranslator<'a> {
 
                     // --- End Label ---
                     // This is the merge point after the boolean logic.
-                    instructions.push(TackyInstruction::Lable {
+                    instructions.push(TackyInstruction::Label {
                         name: end_label_name,
                     });
 
@@ -307,7 +307,7 @@ impl<'a> AstToTackyTranslator<'a> {
 
                     // --- True Case Label ---
                     // This is where execution jumps if either left or right was non-zero.
-                    instructions.push(TackyInstruction::Lable {
+                    instructions.push(TackyInstruction::Label {
                         name: true_label_name,
                     });
 
@@ -319,7 +319,7 @@ impl<'a> AstToTackyTranslator<'a> {
 
                     // --- End Label ---
                     // This is the merge point after the boolean logic.
-                    instructions.push(TackyInstruction::Lable {
+                    instructions.push(TackyInstruction::Label {
                         name: end_label_name,
                     });
 

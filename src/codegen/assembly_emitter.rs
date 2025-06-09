@@ -155,6 +155,13 @@ impl CodeEmitter {
                         "Failed to write cdq instruction",
                     )?;
                 }
+                _ => {
+                    // Handle other instructions like Cmp, Jmp, JmpCC, SetCC, Label
+                    // For simplicity, we assume these are not present in the final Assembly AST
+                    // since they are typically used for control flow and not in the final assembly.
+                    // If they were present, we would need to handle them similarly to the above.
+                    continue; // Skip unsupported instructions
+                }
             }
         }
 
