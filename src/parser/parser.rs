@@ -88,7 +88,7 @@ impl<'a> Parser<'a> {
                 TokenType::Minus => BinaryOperator::Subtract,
                 TokenType::Mul => BinaryOperator::Multiply,
                 TokenType::Div => BinaryOperator::Divide,
-                TokenType::Remaider => BinaryOperator::Remainder,
+                TokenType::Remainder => BinaryOperator::Remainder,
                 _ => break, // 不是二元运算符，结束循环
             };
 

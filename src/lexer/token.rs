@@ -21,7 +21,16 @@ pub enum TokenType {
     Add,           //+
     Mul,           //*
     Div,
-    Remaider, //%
+    Remainder,    //%
+    Bang,         // !
+    And,          // &&
+    Or,           // ||
+    EqualEqual,   // ==
+    BangEqual,    // !=
+    Less,         // <
+    LessEqual,    //<=,
+    Greater,      // >
+    GreaterEqual, // >=
 
     Eof, // End of file
 }

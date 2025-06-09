@@ -79,9 +79,61 @@ impl<'a> Lexer<'a> {
                 Ok(())
             }
             '%' => {
-                self.add_token(TokenType::Remaider, None);
+                self.add_token(TokenType::Remainder, None);
                 Ok(())
             }
+            '&' => {
+                if let Some(c) = self.peek() {
+                    if c == '&' {
+                        self.add_token(TokenType::And, None);
+                        self.advance();
+                    }
+                }
+                Ok(())
+            }
+            '|' => {
+                if let Some(c) = self.peek() {
+                    if c == '|' {
+                        self.add_token(TokenType::Or, None);
+                        self.advance();
+                    }
+                }
+                Ok(())
+            }
+            '=' => {
+                if let Some(c) = self.peek() {
+                    if c == '=' {
+                        self.add_token(TokenType::EqualEqual, None);
+                        self.advance();
+                    }
+                }
+                Ok(())
+            }
+            '!' => {
+                if self.match_char('=') {
+                    self.add_token(TokenType::BangEqual, None);
+                } else {
+                    self.add_token(TokenType::Bang, None);
+                }
+                Ok(())
+            }
+            '<' => {
+                if self.match_char('=') {
+                    self.add_token(TokenType::LessEqual, None);
+                } else {
+                    self.add_token(TokenType::Less, None);
+                }
+                Ok(())
+            }
+            '>' => {
+                if self.match_char('=') {
+                    self.add_token(TokenType::GreaterEqual, None);
+                } else {
+                    self.add_token(TokenType::Greater, None);
+                }
+                Ok(())
+            }
+
             '-' => {
                 if self.match_char('-') {
                     self.add_token(TokenType::Decrement, None);
