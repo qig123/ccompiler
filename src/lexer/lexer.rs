@@ -100,15 +100,7 @@ impl<'a> Lexer<'a> {
                 }
                 Ok(())
             }
-            '=' => {
-                if let Some(c) = self.peek() {
-                    if c == '=' {
-                        self.add_token(TokenType::EqualEqual, None);
-                        self.advance();
-                    }
-                }
-                Ok(())
-            }
+
             '!' => {
                 if self.match_char('=') {
                     self.add_token(TokenType::BangEqual, None);
@@ -139,6 +131,14 @@ impl<'a> Lexer<'a> {
                     self.add_token(TokenType::Decrement, None);
                 } else {
                     self.add_token(TokenType::Minus, None);
+                }
+                Ok(())
+            }
+            '=' => {
+                if self.match_char('=') {
+                    self.add_token(TokenType::EqualEqual, None);
+                } else {
+                    self.add_token(TokenType::Equal, None);
                 }
                 Ok(())
             }

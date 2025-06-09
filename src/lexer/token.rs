@@ -31,6 +31,7 @@ pub enum TokenType {
     LessEqual,    //<=,
     Greater,      // >
     GreaterEqual, // >=
+    Equal,
 
     Eof, // End of file
 }

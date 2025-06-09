@@ -41,7 +41,7 @@ impl LabelGenerator {
     }
 
     fn next(&mut self) -> String {
-        let name = format!("label.{}", self.counter);
+        let name = format!("abel.{}", self.counter);
         self.counter += 1;
         name
     }
