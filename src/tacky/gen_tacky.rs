@@ -98,19 +98,20 @@ impl<'a> AstToTackyTranslator<'a> {
         &mut self,
         ast_function: AstFunction,
     ) -> Result<TackyFunctionDefinition, TackyError> {
-        let function_name = ast_function.name.get_lexeme(self.source);
-        let mut tacky_body: Vec<TackyInstruction> = Vec::new();
+        // let function_name = ast_function.name.get_lexeme(self.source);
+        // let mut tacky_body: Vec<TackyInstruction> = Vec::new();
 
-        // Translate each statement in the function body
-        for stmt in ast_function.body {
-            let instructions = self.translate_stmt(stmt)?;
-            tacky_body.extend(instructions); // Add generated instructions to the body
-        }
+        // // Translate each statement in the function body
+        // for stmt in ast_function.body {
+        //     let instructions = self.translate_stmt(stmt)?;
+        //     tacky_body.extend(instructions);
+        // }
 
-        Ok(TackyFunctionDefinition {
-            name: function_name.to_string(),
-            body: tacky_body,
-        })
+        // Ok(TackyFunctionDefinition {
+        //     name: function_name.to_string(),
+        //     body: tacky_body,
+        // })
+        todo!()
     }
 
     // Translates an AST Statement to a sequence of TACKY Instructions
@@ -136,7 +137,14 @@ impl<'a> AstToTackyTranslator<'a> {
                 // Add the final Return instruction
                 instructions.push(TackyInstruction::Return(result_value));
             } // Handle other statement types if the AST had them (e.g., assignments)
-              // _ => return Err(format!("Unsupported AST statement type: {:?}", ast_stmt)),
+            _ => {
+                return Err(TackyError {
+                    message: format!(
+                        "Unsupported AST statement type for translation: {:?}",
+                        ast_stmt
+                    ),
+                });
+            }
         }
 
         Ok(instructions)
@@ -358,6 +366,11 @@ impl<'a> AstToTackyTranslator<'a> {
                                 ),
                             });
                         }
+                        _ => {
+                            return Err(TackyError {
+                                message: format!("Unsupported AST binary operator: {:?}", operator),
+                            });
+                        }
                     };
 
                     // Generate the TACKY Binary instruction: result_temp_value = src1 op src2
@@ -372,6 +385,14 @@ impl<'a> AstToTackyTranslator<'a> {
                     // The result of this expression is the temporary variable
                     result_value = result_temp_value;
                 }
+            }
+            _ => {
+                return Err(TackyError {
+                    message: format!(
+                        "Unsupported AST expression type for translation: {:?}",
+                        ast_expr
+                    ),
+                });
             }
         }
         Ok((instructions, result_value))

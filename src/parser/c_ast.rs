@@ -7,10 +7,26 @@ pub struct Program {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: Token,
-    pub body: Vec<Stmt>,
+    pub body: Vec<Block>,
 }
 #[derive(Debug, Clone, PartialEq)]
+pub enum Block {
+    Stmt(Stmt),
+    Declaration(Declaration),
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct Declaration {
+    pub name: Token,
+    pub init: Option<Expr>,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stmt {
+    Return { keyword: Token, value: Option<Expr> },
+    Expression { exp: Box<Expr> },
+    Null,
+}
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(LiteralExpr),
     Unary {
@@ -22,6 +38,13 @@ pub enum Expr {
     },
     Binary {
         operator: BinaryOperator,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    Var {
+        name: Token,
+    },
+    Assignment {
         left: Box<Expr>,
         right: Box<Expr>,
     },
@@ -41,6 +64,7 @@ pub enum BinaryOperator {
     LessEqual,
     Greater,
     GreaterEqual,
+    Equal,
 }
 impl BinaryOperator {
     pub fn precedence(&self) -> u8 {
@@ -54,6 +78,7 @@ impl BinaryOperator {
             BinaryOperator::EqualEqual | BinaryOperator::BangEqual => 30,
             BinaryOperator::And => 10,
             BinaryOperator::Or => 5,
+            BinaryOperator::Equal => 1,
         }
     }
 }
@@ -61,8 +86,4 @@ impl BinaryOperator {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LiteralExpr {
     Integer(i64),
-}
-#[derive(Debug, Clone, PartialEq)]
-pub enum Stmt {
-    Return { keyword: Token, value: Option<Expr> },
 }
