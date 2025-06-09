@@ -11,6 +11,12 @@ use std::path::Path; // Use Path instead of std::path::Path
 
 pub struct CodeEmitter;
 
+#[derive(Clone, Copy)]
+enum OperandSize {
+    Byte, // 8-bit (e.g., %al)
+    Long, // 32-bit (e.g., %eax)
+          // Quad, // 64-bit (e.g., %rax) - if you need it later
+}
 impl CodeEmitter {
     pub fn emit(
         assembly_ast: &Assemble,
@@ -81,8 +87,8 @@ impl CodeEmitter {
                     }
                 }
                 assembly_ir::Instruction::Mov { src, dst } => {
-                    let src_str = CodeEmitter::operand_to_string(src)?;
-                    let dst_str = CodeEmitter::operand_to_string(dst)?;
+                    let src_str = CodeEmitter::operand_to_string(src, OperandSize::Long)?;
+                    let dst_str = CodeEmitter::operand_to_string(dst, OperandSize::Long)?;
                     // This was already correct regarding the comma
                     CodeEmitter::write_line(
                         &mut file,
@@ -91,7 +97,7 @@ impl CodeEmitter {
                     )?;
                 }
                 assembly_ir::Instruction::Unary { op, operand } => {
-                    let operand_str = CodeEmitter::operand_to_string(operand)?;
+                    let operand_str = CodeEmitter::operand_to_string(operand, OperandSize::Long)?;
                     let op_str = match op {
                         AssUnaryOperator::Neg => "negl",
                         AssUnaryOperator::Not => "notl",
@@ -123,8 +129,10 @@ impl CodeEmitter {
                     left_operand,
                     right_operand,
                 } => {
-                    let left_operand_str = CodeEmitter::operand_to_string(left_operand)?;
-                    let right_operand_str = CodeEmitter::operand_to_string(right_operand)?;
+                    let left_operand_str =
+                        CodeEmitter::operand_to_string(left_operand, OperandSize::Long)?;
+                    let right_operand_str =
+                        CodeEmitter::operand_to_string(right_operand, OperandSize::Long)?;
 
                     let op_str = match op {
                         AssBinaryOperator::Add => "addl",
@@ -139,7 +147,7 @@ impl CodeEmitter {
                     )?;
                 }
                 assembly_ir::Instruction::Idiv(operand) => {
-                    let operand_str = CodeEmitter::operand_to_string(operand)?;
+                    let operand_str = CodeEmitter::operand_to_string(operand, OperandSize::Long)?;
                     // Idiv is single operand, no comma needed
                     CodeEmitter::write_line(
                         &mut file,
@@ -159,8 +167,10 @@ impl CodeEmitter {
                     left_operand,
                     right_operand,
                 } => {
-                    let left_operand_str = CodeEmitter::operand_to_string(left_operand)?;
-                    let right_operand_str = CodeEmitter::operand_to_string(right_operand)?;
+                    let left_operand_str =
+                        CodeEmitter::operand_to_string(left_operand, OperandSize::Long)?;
+                    let right_operand_str =
+                        CodeEmitter::operand_to_string(right_operand, OperandSize::Long)?;
                     // Cmp is single operand, no comma needed
                     CodeEmitter::write_line(
                         &mut file,
@@ -195,33 +205,7 @@ impl CodeEmitter {
                 assembly_ir::Instruction::SetCC { condition, dst } => {
                     //Setcc use 8 bit registers, so we need to ensure dst is a valid 8-bit register
                     // let dst_str = CodeEmitter::operand_to_string(dst)?;
-                    let dst_str = match dst {
-                        Operand::Imm(val) => Ok(format!("${}", val)), // Immediate: $value
-                        Operand::Reg(reg) => {
-                            // Register: %reg_name
-                            // Ensure we use 8-bit registers for SetCC
-                            match reg {
-                                Reg::AX => Ok("%al".to_string()),    // %al for 8-bit AX
-                                Reg::DX => Ok("%dl".to_string()),    // %dl for 8-bit DX
-                                Reg::R10 => Ok("%r10b".to_string()), // %r10b for 8-bit R10
-                                Reg::R11 => Ok("%r11b".to_string()), // %r11b for 8-bit R11
-                            }
-                        } // Register: %reg_name
-                        Operand::Stack(offset) => {
-                            // Stack address: offset(%rbp)
-                            // Offset is negative relative to %rbp.
-                            Ok(format!("{}(%rbp)", offset))
-                        }
-                        Operand::Pseudo(id) => {
-                            // Pseudoregisters should have been replaced by Stack operands.
-                            Err(CodeEmitterError {
-                                message: format!(
-                                    "Internal error: Pseudoregister '{}' found in final Assembly AST. Pseudo-to-Stack pass failed?",
-                                    id
-                                ),
-                            })
-                        }
-                    }?;
+                    let dst_str = CodeEmitter::operand_to_string(dst, OperandSize::Byte)?;
                     let condition_str = match condition {
                         assembly_ir::Condition::E => "sete",
                         assembly_ir::Condition::NE => "setne",
@@ -277,36 +261,37 @@ impl CodeEmitter {
         Ok(())
     }
 
-    // Helper to translate an Operand AST node to AT&T assembly syntax string
-    fn operand_to_string(operand: &Operand) -> Result<String, CodeEmitterError> {
-        match operand {
-            Operand::Imm(val) => Ok(format!("${}", val)), // Immediate: $value
-            Operand::Reg(reg) => Ok(CodeEmitter::reg_to_string(reg)), // Register: %reg_name
-            Operand::Stack(offset) => {
-                // Stack address: offset(%rbp)
-                // Offset is negative relative to %rbp.
-                Ok(format!("{}(%rbp)", offset))
-            }
-            Operand::Pseudo(id) => {
-                // Pseudoregisters should have been replaced by Stack operands.
-                Err(CodeEmitterError {
-                    message: format!(
-                        "Internal error: Pseudoregister '{}' found in final Assembly AST. Pseudo-to-Stack pass failed?",
-                        id
-                    ),
-                })
-            }
+    // Helper to translate a Reg AST node to AT&T assembly syntax string (32-bit)
+    fn reg_to_string(reg: &Reg, size: OperandSize) -> String {
+        match size {
+            OperandSize::Byte => match reg {
+                // 8-bit registers
+                Reg::AX => "%al".to_string(),
+                Reg::DX => "%dl".to_string(),
+                Reg::R10 => "%r10b".to_string(),
+                Reg::R11 => "%r11b".to_string(),
+            },
+            OperandSize::Long => match reg {
+                // 32-bit registers
+                Reg::AX => "%eax".to_string(),
+                Reg::DX => "%edx".to_string(),
+                Reg::R10 => "%r10d".to_string(),
+                Reg::R11 => "%r11d".to_string(),
+            },
         }
     }
-
-    // Helper to translate a Reg AST node to AT&T assembly syntax string (32-bit)
-    fn reg_to_string(reg: &Reg) -> String {
-        match reg {
-            // Using 32-bit register names (%eax, %edx, %r10d, %r11d)
-            Reg::AX => "%eax".to_string(),
-            Reg::DX => "%edx".to_string(),
-            Reg::R10 => "%r10d".to_string(),
-            Reg::R11 => "%r11d".to_string(),
+    // Helper to translate an Operand AST node to AT&T assembly syntax string
+    fn operand_to_string(operand: &Operand, size: OperandSize) -> Result<String, CodeEmitterError> {
+        match operand {
+            Operand::Imm(val) => Ok(format!("${}", val)),
+            Operand::Reg(reg) => Ok(CodeEmitter::reg_to_string(reg, size)), // Pass the size down
+            Operand::Stack(offset) => Ok(format!("{}(%rbp)", offset)),
+            Operand::Pseudo(id) => Err(CodeEmitterError {
+                message: format!(
+                    "Internal error: Pseudoregister '{}' found in final Assembly AST.",
+                    id
+                ),
+            }),
         }
     }
 
