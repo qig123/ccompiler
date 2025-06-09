@@ -17,12 +17,18 @@ pub enum Block {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Declaration {
     pub name: Token,
-    pub init: Option<Expr>,
+    pub init: Option<Box<Expr>>,
+    pub unique_name: String, // 新增字段，存储生成的唯一名称
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Return { keyword: Token, value: Option<Expr> },
-    Expression { exp: Box<Expr> },
+    Return {
+        keyword: Token,
+        value: Option<Box<Expr>>,
+    },
+    Expression {
+        exp: Box<Expr>,
+    },
     Null,
 }
 
@@ -43,6 +49,7 @@ pub enum Expr {
     },
     Var {
         name: Token,
+        unique_name: String, // 新增字段，存储对应的唯一名称
     },
     Assignment {
         left: Box<Expr>,

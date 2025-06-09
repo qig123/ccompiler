@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use crate::driver::CompilerDriver;
 
+mod analysis;
 mod codegen;
 mod driver;
 mod error;
@@ -18,13 +19,13 @@ struct Args {
     /// Input C source file
     input: PathBuf,
 
-    /// Stop after lexing
     #[arg(long)]
     lex: bool,
-
-    /// Stop after parsing
     #[arg(long)]
     parse: bool,
+    //语义分析
+    #[arg(long)]
+    validate: bool,
     // tacky
     #[arg(long)]
     tacky: bool,
@@ -49,17 +50,18 @@ mod tests {
     use std::path::Path;
     const TEST_FILE: &str = "./target/debug/hello.c"; // Path to the test file
 
-    fn test_args(lex: bool, parse: bool, tacky: bool, codegen: bool) -> Args {
+    fn test_args(lex: bool, parse: bool, validate: bool, tacky: bool, codegen: bool) -> Args {
         Args {
             input: Path::new(TEST_FILE).to_path_buf(),
             lex,
             parse,
+            validate,
             tacky,
             codegen,
         }
     }
     #[test]
     fn test_all() -> Result<(), CompilerError> {
-        CompilerDriver::run(&test_args(false, true, false, false))
+        CompilerDriver::run(&test_args(false, false, true, false, false))
     }
 }

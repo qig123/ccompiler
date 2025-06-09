@@ -11,7 +11,26 @@ pub struct LexerError {
 pub struct ParserError {
     pub message: String,
 }
-
+#[derive(Debug, Clone, PartialEq)] // 添加 Clone 和 PartialEq 以便测试
+pub enum SemanticError {
+    DuplicateDeclaration {
+        name: String,
+        // 如果可能，可以尝试传递 Token 本身或其近似位置信息，
+        // 但如果不行，至少有 name
+    },
+    UndeclaredVariable {
+        name: String,
+        // 同上
+    },
+    InvalidLvalue {
+        // 可以尝试描述是什么样的非法左值，
+        // 例如 "assignment to a literal" 或 "assignment to a binary expression"
+        // 但这需要 analyze_expression 在检测到错误时能提供这种上下文
+        // 简单起见，可以先不加额外描述，或者只加一个通用的
+        description: String, // 例如 "Cannot assign to this expression"
+    },
+    // 其他可能的语义错误
+}
 // Codegen 阶段的错误
 #[derive(Debug, PartialEq, Clone)]
 pub struct CodegenError {
@@ -32,6 +51,7 @@ pub struct CodeEmitterError {
 pub enum CompilerError {
     Lexer(LexerError),
     Parser(ParserError),
+    Semantic(SemanticError),
     Codegen(CodegenError),
     CodeEmitter(CodeEmitterError),
     Tacky(TackyError),
@@ -54,14 +74,18 @@ impl From<ParserError> for CompilerError {
         CompilerError::Parser(err)
     }
 }
+impl From<SemanticError> for CompilerError {
+    fn from(err: SemanticError) -> Self {
+        CompilerError::Semantic(err)
+    }
+}
 
 impl From<CodegenError> for CompilerError {
     fn from(err: CodegenError) -> Self {
         CompilerError::Codegen(err)
     }
 }
-// To make `CodeEmitterError` automatically convert to `CompilerError::CodeEmitter`,
-// implement the From trait:
+
 impl From<CodeEmitterError> for CompilerError {
     fn from(err: CodeEmitterError) -> Self {
         CompilerError::CodeEmitter(err)
@@ -93,6 +117,33 @@ impl fmt::Display for ParserError {
         write!(f, "{}", self.message)
     }
 }
+impl std::fmt::Display for SemanticError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SemanticError::DuplicateDeclaration { name } => {
+                write!(
+                    f,
+                    "Semantic Error: Variable '{}' has already been declared in this scope.",
+                    name
+                )
+            }
+            SemanticError::UndeclaredVariable { name } => {
+                write!(
+                    f,
+                    "Semantic Error: Variable '{}' has not been declared yet.",
+                    name
+                )
+            }
+            SemanticError::InvalidLvalue { description } => {
+                write!(
+                    f,
+                    "Semantic Error: Invalid assignment target. {}.",
+                    description
+                )
+            }
+        }
+    }
+}
 impl fmt::Display for CodegenError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.message)
@@ -114,6 +165,7 @@ impl fmt::Display for CompilerError {
         match self {
             CompilerError::Lexer(err) => write!(f, "Lexer Error: {}", err),
             CompilerError::Parser(err) => write!(f, "Parser Error: {}", err),
+            CompilerError::Semantic(err) => write!(f, "Semantic Error: {}", err),
             CompilerError::Codegen(err) => write!(f, "Codegen Error: {}", err),
             CompilerError::Tacky(err) => write!(f, "Tacky Error: {}", err),
             CompilerError::CodeEmitter(err) => write!(f, "Code Emitter Error: {}", err),

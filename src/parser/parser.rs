@@ -112,10 +112,11 @@ impl<'a> Parser<'a> {
                 TokenType::Semicolon,
                 "Expected ';' after variable declaration",
             )?;
-
+            let name = name_token.get_lexeme(self.source);
             Ok(Block::Declaration(Declaration {
                 name: name_token,
-                init,
+                init: init.map(Box::new), // 如果有初始化表达式，则装箱
+                unique_name: format!("{}", name), // 生成唯一名称
             }))
         } else {
             // 否则，这是一个语句
@@ -154,7 +155,10 @@ impl<'a> Parser<'a> {
         // 期望 ';' 结束 return 语句
         self.consume(TokenType::Semicolon, "Expected ';' after return statement")?;
 
-        Ok(Stmt::Return { keyword, value })
+        Ok(Stmt::Return {
+            keyword,
+            value: value.map(Box::new),
+        })
     }
     fn parse_expression(&mut self) -> Result<Expr, ParserError> {
         // 从最低优先级开始解析表达式
@@ -312,8 +316,10 @@ impl<'a> Parser<'a> {
         // 解析标识符 (变量引用)
         } else if self.match_token(&[TokenType::Identifier]) {
             let identifier = self.previous().clone(); // 获取并消耗标识符 Token
+            let name = identifier.get_lexeme(self.source).to_string(); // 获取标识符的文本
             Ok(Expr::Var {
-                name: identifier, // 使用标识符的 Token
+                name: identifier,  // 使用标识符的 Token
+                unique_name: name, // 生成唯一名称（目前直接使用标识符文本）
             })
         // 遇到无法识别的 Token，报告错误
         } else {

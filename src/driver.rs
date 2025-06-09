@@ -1,8 +1,9 @@
 use crate::{
+    analysis::analysis::SemanticAnalyzer,
     codegen::{
         assembly_emitter::CodeEmitter, assembly_ir::Assemble, codegen::TackyToAssemblyTranslator,
     },
-    error::{CodegenError, CompilerError, ParserError, TackyError},
+    error::{CodegenError, CompilerError, ParserError, SemanticError, TackyError},
     lexer::{self, Token},
     parser::{c_ast::Program, parser::Parser},
     tacky::gen_tacky::AstToTackyTranslator,
@@ -34,6 +35,14 @@ impl CompilerDriver {
             Self::cleanup(&preprocessed_path);
             return Ok(());
         }
+        // 4. 语义分析
+        let ast = Self::validate(ast, &source)?;
+        if args.validate {
+            println!("{:#?}", ast);
+            Self::cleanup(&preprocessed_path);
+            return Ok(());
+        }
+
         let tacky_ast = Self::translate_tacky(ast, &source)?;
         if args.tacky {
             println!("{:#?}", tacky_ast);
@@ -114,10 +123,13 @@ impl CompilerDriver {
         lexer.tokenize()?;
         Ok(lexer.tokens)
     }
-
     fn parse<'a>(tokens: Vec<Token>, source: &'a str) -> Result<Program, ParserError> {
         let mut parser = Parser::new(tokens, source);
         parser.parse()
+    }
+    fn validate<'a>(program: Program, source: &'a str) -> Result<Program, SemanticError> {
+        let mut semantic_analyzer = SemanticAnalyzer::new(source);
+        semantic_analyzer.analyze(program)
     }
     fn translate_tacky<'a>(
         ast: Program,
