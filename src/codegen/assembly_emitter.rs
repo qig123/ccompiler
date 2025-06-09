@@ -155,13 +155,102 @@ impl CodeEmitter {
                         "Failed to write cdq instruction",
                     )?;
                 }
-                _ => {
-                    // Handle other instructions like Cmp, Jmp, JmpCC, SetCC, Label
-                    // For simplicity, we assume these are not present in the final Assembly AST
-                    // since they are typically used for control flow and not in the final assembly.
-                    // If they were present, we would need to handle them similarly to the above.
-                    continue; // Skip unsupported instructions
+                assembly_ir::Instruction::Cmp {
+                    left_operand,
+                    right_operand,
+                } => {
+                    let left_operand_str = CodeEmitter::operand_to_string(left_operand)?;
+                    let right_operand_str = CodeEmitter::operand_to_string(right_operand)?;
+                    // Cmp is single operand, no comma needed
+                    CodeEmitter::write_line(
+                        &mut file,
+                        &format!("\tcmpl\t{}, {}", left_operand_str, right_operand_str),
+                        "Failed to write Cmp instruction",
+                    )?;
                 }
+                assembly_ir::Instruction::Jmp(target) => {
+                    // Jmp is unconditional, no operands
+                    CodeEmitter::write_line(
+                        &mut file,
+                        &format!("\tjmp\t.L{}", target),
+                        "Failed to write Jmp instruction",
+                    )?;
+                }
+                assembly_ir::Instruction::JmpCC { condition, target } => {
+                    let condition_str = match condition {
+                        assembly_ir::Condition::E => "je",
+                        assembly_ir::Condition::NE => "jne",
+                        assembly_ir::Condition::L => "jl",
+                        assembly_ir::Condition::LE => "jle",
+                        assembly_ir::Condition::G => "jg",
+                        assembly_ir::Condition::GE => "jge",
+                    };
+                    // JmpCC is single operand, no comma needed
+                    CodeEmitter::write_line(
+                        &mut file,
+                        &format!("\t{} .L{}", condition_str, target),
+                        "Failed to write JmpCC instruction",
+                    )?;
+                }
+                assembly_ir::Instruction::SetCC { condition, dst } => {
+                    //Setcc use 8 bit registers, so we need to ensure dst is a valid 8-bit register
+                    // let dst_str = CodeEmitter::operand_to_string(dst)?;
+                    let dst_str = match dst {
+                        Operand::Imm(val) => Ok(format!("${}", val)), // Immediate: $value
+                        Operand::Reg(reg) => {
+                            // Register: %reg_name
+                            // Ensure we use 8-bit registers for SetCC
+                            match reg {
+                                Reg::AX => Ok("%al".to_string()),    // %al for 8-bit AX
+                                Reg::DX => Ok("%dl".to_string()),    // %dl for 8-bit DX
+                                Reg::R10 => Ok("%r10b".to_string()), // %r10b for 8-bit R10
+                                Reg::R11 => Ok("%r11b".to_string()), // %r11b for 8-bit R11
+                            }
+                        } // Register: %reg_name
+                        Operand::Stack(offset) => {
+                            // Stack address: offset(%rbp)
+                            // Offset is negative relative to %rbp.
+                            Ok(format!("{}(%rbp)", offset))
+                        }
+                        Operand::Pseudo(id) => {
+                            // Pseudoregisters should have been replaced by Stack operands.
+                            Err(CodeEmitterError {
+                                message: format!(
+                                    "Internal error: Pseudoregister '{}' found in final Assembly AST. Pseudo-to-Stack pass failed?",
+                                    id
+                                ),
+                            })
+                        }
+                    }?;
+                    let condition_str = match condition {
+                        assembly_ir::Condition::E => "sete",
+                        assembly_ir::Condition::NE => "setne",
+                        assembly_ir::Condition::L => "setl",
+                        assembly_ir::Condition::LE => "setle",
+                        assembly_ir::Condition::G => "setg",
+                        assembly_ir::Condition::GE => "setge",
+                    };
+                    // SetCC is single operand, no comma needed
+                    CodeEmitter::write_line(
+                        &mut file,
+                        &format!("\t{} {}", condition_str, dst_str),
+                        "Failed to write SetCC instruction",
+                    )?;
+                }
+                assembly_ir::Instruction::Label(name) => {
+                    // Labels are just written as is, no tab needed
+                    CodeEmitter::write_line(
+                        &mut file,
+                        &format!(".L{}:", name),
+                        "Failed to write Label",
+                    )?;
+                } // _ => {
+                  //     // Handle other instructions like Cmp, Jmp, JmpCC, SetCC, Label
+                  //     // For simplicity, we assume these are not present in the final Assembly AST
+                  //     // since they are typically used for control flow and not in the final assembly.
+                  //     // If they were present, we would need to handle them similarly to the above.
+                  //     continue; // Skip unsupported instructions
+                  // }
             }
         }
 

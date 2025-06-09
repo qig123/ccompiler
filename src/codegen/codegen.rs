@@ -227,19 +227,47 @@ impl TackyToAssemblyTranslator {
                     right_operand,
                 } => {
                     match (&left_operand, &right_operand) {
-                        (Operand::Stack(_), Operand::Stack(_)) => {
-                            // Rule: Cmp(Stack, Stack) => Mov(Stack, R10); Cmp(R10, Stack)
+                        // Case 1: Cmp Stack, Stack -> mov Stack1, R10; cmp R10, Stack2
+                        // Handles the "two memory operands" constraint.
+                        (Operand::Stack(s1), Operand::Stack(s2)) => {
+                            // Rule: Use R10 for the first operand if it's memory (and the second is also memory)
                             final_assembly_instructions.push(assembly_ir::Instruction::Mov {
-                                src: left_operand.clone(), // Clone source Stack operand
-                                dst: assembly_ir::Operand::Reg(assembly_ir::Reg::R10), // Use R10 for temp
+                                src: Operand::Stack(*s1), // Load Stack1 into R10
+                                dst: assembly_ir::Operand::Reg(assembly_ir::Reg::R10),
                             });
+                            // Compare R10 (holding Stack1) against Stack2.
+                            // If Emitter translates Cmp { A, B } to `cmpl B, A` (A-B),
+                            // Cmp { R10, Stack2 } -> `cmpl Stack2, R10` -> R10 - Stack2 -> Stack1 - Stack2. Correct.
                             final_assembly_instructions.push(assembly_ir::Instruction::Cmp {
                                 left_operand: assembly_ir::Operand::Reg(assembly_ir::Reg::R10),
-                                right_operand: right_operand.clone(), // Clone destination Stack operand
+                                right_operand: Operand::Stack(*s2),
                             });
                         }
-                        // Cmp(Imm/Reg, Stack) and Cmp(Stack, Reg) are valid, pass through ,注意这里的 // Cmp(?, Imm) 是不合法的
+                        // Case 2: Cmp X, Imm -> mov Imm, R11; cmp X, R11
+                        // Handles the "second operand cannot be immediate" constraint.
+                        // This covers Reg, Imm; Stack, Imm; and Imm, Imm.
+                        (_, Operand::Imm(i)) => {
+                            // Rule: Use R11 for the second operand if it's immediate.
+                            final_assembly_instructions.push(assembly_ir::Instruction::Mov {
+                                src: Operand::Imm(*i), // Load the immediate value into R11
+                                dst: assembly_ir::Operand::Reg(assembly_ir::Reg::R11),
+                            });
+                            // Compare the original left operand (X) against R11 (holding the immediate).
+                            // If Emitter translates Cmp { A, B } to `cmpl B, A` (A-B),
+                            // Cmp { left_operand, R11 } -> `cmpl R11, left_operand_str` -> left_operand - R11 -> left_operand - Imm. Correct.
+                            final_assembly_instructions.push(assembly_ir::Instruction::Cmp {
+                                left_operand, // The original left operand (Reg, Stack, or Imm)
+                                right_operand: assembly_ir::Operand::Reg(assembly_ir::Reg::R11), // Compare against R11
+                            });
+                        }
+                        // Case 3: All other combinations (Reg/Imm/Stack vs Reg/Stack)
+                        // These are valid combinations for `cmpl src, dst` after Emitter swap, and don't violate
+                        // the two main constraints.
+                        // Examples: Cmp Reg, Reg; Cmp Reg, Stack; Cmp Stack, Reg; Cmp Imm, Reg; Cmp Imm, Stack.
+                        // Note: Cmp Imm, Imm and Cmp Stack, Stack and Cmp X, Imm (where X is Reg/Stack)
+                        // are already handled by the cases above.
                         _ => {
+                            // Pass through directly. The emitter will swap operands for assembly if needed.
                             final_assembly_instructions.push(assembly_ir::Instruction::Cmp {
                                 left_operand,
                                 right_operand,

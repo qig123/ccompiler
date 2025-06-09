@@ -5,7 +5,7 @@ pub enum Reg {
     AX, // Represents EAX (32-bit) or RAX (64-bit), depends on context/later lowering
     DX,
     R10, // Represents R10D (32-bit) or R10 (64-bit)
-    R11, //
+    R11,
 }
 
 #[derive(Debug, PartialEq, Clone)]
