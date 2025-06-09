@@ -1,7 +1,7 @@
 // translator.rs
 
 use crate::lexer::token::TokenType;
-use crate::parser;
+use crate::{common_ids, parser};
 use crate::{error::TackyError, tacky::tacky};
 use parser::c_ast::{
     BinaryOperator as AstBinaryOperator, Expr as AstExpr, Function as AstFunction,
@@ -15,35 +15,28 @@ use tacky::{
 };
 
 // A helper to manage temporary variable names
-struct TempGenerator {
-    counter: usize,
-}
+struct TempGenerator {}
 
 impl TempGenerator {
     fn new() -> Self {
-        TempGenerator { counter: 0 }
+        TempGenerator {}
     }
 
     fn next(&mut self) -> String {
-        let name = format!("tmp.{}", self.counter);
-        self.counter += 1;
+        let name = common_ids::generate_translator_temp_name();
         name
     }
 }
 // A helper to manage label  names
-struct LabelGenerator {
-    counter: usize,
-}
+struct LabelGenerator {}
 
 impl LabelGenerator {
     fn new() -> Self {
-        LabelGenerator { counter: 0 }
+        LabelGenerator {}
     }
 
     fn next(&mut self) -> String {
-        let name = format!("abel.{}", self.counter);
-        self.counter += 1;
-        name
+        common_ids::generate_translator_label_name()
     }
 }
 pub struct AstToTackyTranslator<'a> {

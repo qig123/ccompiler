@@ -1,27 +1,9 @@
 //analysis.rs
-use crate::{
-    error::SemanticError,
-    parser::c_ast::*, // 导入 AST 结构体
-};
+use crate::{common_ids, error::SemanticError, parser::c_ast::*};
 use std::collections::HashMap;
 
-// 用于生成唯一变量名的计数器
-// 注意：在更复杂的编译器中，这个计数器可能需要全局或跨阶段共享
-// 并避免与函数名、全局变量名冲突。这里用一个简单的静态可变计数器。
-// 如果你的编译器后续阶段（如 TACKY 生成）也需要生成临时变量名，
-// 它们应该共享同一个计数器，或者有明确的命名空间区分。
-static mut UNIQUE_VARIABLE_COUNTER: usize = 0;
-
 fn generate_unique_variable_name() -> String {
-    unsafe {
-        // 使用 static mut 需要 unsafe
-        let id = UNIQUE_VARIABLE_COUNTER;
-        UNIQUE_VARIABLE_COUNTER += 1;
-        // 使用一个不太可能与用户命名冲突的格式，如前缀 v_
-        format!("v_{}", id)
-        // 为了调试，可以包含原始名称，但这需要原始名称作为参数传入
-        // 例如：format!("{}_{}", original_name, id)
-    }
+    common_ids::generate_analysis_variable_name()
 }
 
 // Semantic Analyzer 结构体，可能需要持有对原始源代码的引用
@@ -32,11 +14,6 @@ pub struct SemanticAnalyzer<'a> {
 
 impl<'a> SemanticAnalyzer<'a> {
     pub fn new(source: &'a str) -> Self {
-        // 重置计数器，以防多次调用 parse -> analyze
-        // 注意：如果你的编译器处理多个文件或有更复杂的结构，这里可能需要调整
-        unsafe {
-            UNIQUE_VARIABLE_COUNTER = 0;
-        }
         SemanticAnalyzer { source }
     }
 

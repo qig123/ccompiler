@@ -6,6 +6,7 @@ use crate::driver::CompilerDriver;
 
 mod analysis;
 mod codegen;
+mod common_ids;
 mod driver;
 mod error;
 mod lexer;
