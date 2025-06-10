@@ -213,14 +213,20 @@ impl<'a> AstToTackyTranslator<'a> {
                     name: end_label_name,
                 });
             }
-            _ => {
-                return Err(TackyError {
-                    message: format!(
-                        "Unsupported AST statement type for translation: {:?}",
-                        ast_stmt
-                    ),
-                });
-            }
+            AstStmt::Compound(block) => {
+                // Translate each statement in the compound block
+                for item in block.items {
+                    let item_instructions = self.translate_function_blockitem(item)?;
+                    instructions.extend(item_instructions);
+                }
+            } // _ => {
+              //     return Err(TackyError {
+              //         message: format!(
+              //             "Unsupported AST statement type for translation: {:?}",
+              //             ast_stmt
+              //         ),
+              //     });
+              // }
         }
 
         Ok(instructions)
