@@ -139,6 +139,38 @@ impl<'a> AstToTackyTranslator<'a> {
         Ok(instructions)
     }
 
+    fn translate_forinit(
+        &mut self,
+        init: parser::c_ast::ForInit,
+    ) -> Result<Vec<TackyInstruction>, TackyError> {
+        let mut instructions: Vec<TackyInstruction> = Vec::new();
+
+        match init {
+            parser::c_ast::ForInit::InitDecl(decl) => {
+                // Handle variable declaration in for loop initialization
+                if let Some(init_expr) = decl.init {
+                    let (init_instructions, init_value) = self.translate_expr(*init_expr)?;
+                    instructions.extend(init_instructions);
+                    // Create a Copy instruction to assign the initial value to the variable
+                    let dest_value = TackyValue::Var(decl.unique_name.clone());
+                    instructions.push(TackyInstruction::Copy {
+                        src: init_value,
+                        dst: dest_value,
+                    });
+                }
+            }
+            parser::c_ast::ForInit::InitExp(exp) => {
+                if let Some(expr) = exp {
+                    // Translate the expression directly
+                    let (expr_instructions, _result_value) = self.translate_expr(*expr)?;
+                    instructions.extend(expr_instructions);
+                }
+            }
+        }
+
+        Ok(instructions)
+    }
+
     // Translates an AST Statement to a sequence of TACKY Instructions
     fn translate_stmt(&mut self, ast_stmt: AstStmt) -> Result<Vec<TackyInstruction>, TackyError> {
         let mut instructions: Vec<TackyInstruction> = Vec::new();
@@ -220,14 +252,135 @@ impl<'a> AstToTackyTranslator<'a> {
                     instructions.extend(item_instructions);
                 }
             }
-            _ => {
-                return Err(TackyError {
-                    message: format!(
-                        "Unsupported AST statement type for translation: {:?}",
-                        ast_stmt
-                    ),
+            AstStmt::Break(label) => {
+                instructions.push(TackyInstruction::Jump {
+                    target: format!("break_{}", label),
                 });
             }
+            AstStmt::Continue(label) => {
+                instructions.push(TackyInstruction::Jump {
+                    target: format!("continue_{}", label),
+                });
+            }
+            AstStmt::DoWhile {
+                body,
+                condtion,
+                label,
+            } => {
+                let loop_start_label_name = format!("loop_start_{}", label);
+                let continue_label_name = format!("continue_{}", label);
+                let break_label_name = format!("break_{}", label);
+
+                instructions.push(TackyInstruction::Label {
+                    name: loop_start_label_name.clone(),
+                }); // 正确
+                let body_instructions = self.translate_stmt(*body)?;
+                instructions.extend(body_instructions);
+                instructions.push(TackyInstruction::Label {
+                    name: continue_label_name.clone(),
+                }); // 正确
+                let (cond_instructions, cond_value) = self.translate_expr(*condtion)?;
+                instructions.extend(cond_instructions);
+                instructions.push(TackyInstruction::JumpIfNotZero {
+                    condition: cond_value,
+                    target: loop_start_label_name, // 正确
+                });
+                instructions.push(TackyInstruction::Label {
+                    name: break_label_name.clone(),
+                }); // 正确
+            }
+            AstStmt::While {
+                condition,
+                body,
+                label,
+            } => {
+                let continue_label_name = format!("continue_{}", label);
+                let break_label_name = format!("break_{}", label);
+
+                instructions.push(TackyInstruction::Label {
+                    name: continue_label_name.clone(),
+                }); // 正确
+
+                let (cond_instructions, cond_value) = self.translate_expr(*condition)?;
+                instructions.extend(cond_instructions);
+                instructions.push(TackyInstruction::JumpIfZero {
+                    condition: cond_value,
+                    target: break_label_name.clone(), // 正确
+                });
+                let body_instructions = self.translate_stmt(*body)?;
+                instructions.extend(body_instructions);
+                instructions.push(TackyInstruction::Jump {
+                    target: continue_label_name.clone(),
+                }); // 正确
+                instructions.push(TackyInstruction::Label {
+                    name: break_label_name.clone(),
+                }); // 正确
+            }
+            AstStmt::For {
+                init,
+                condition,
+                increment,
+                body,
+                label,
+            } => {
+                // For loop translation
+                // 使用从语义分析阶段获得的循环唯一 ID 来构造标签名
+                let loop_start_label_name = format!("loop_start_{}", label); // 或者可以直接用 label
+                let continue_label_name = format!("continue_{}", label); // e.g., "continue__loop_0"
+                let break_label_name = format!("break_{}", label); // e.g., "break__loop_0"
+
+                // 1. Translate the initialization part
+                let init_instructions = self.translate_forinit(init)?;
+                instructions.extend(init_instructions);
+
+                // 2. Generate the loop start label
+                instructions.push(TackyInstruction::Label {
+                    name: loop_start_label_name.clone(), // 使用构造的名称
+                });
+
+                // 3. Translate the condition expression
+                if let Some(cond_expr) = condition {
+                    let (cond_instructions, cond_value) = self.translate_expr(*cond_expr)?;
+                    instructions.extend(cond_instructions);
+                    instructions.push(TackyInstruction::JumpIfZero {
+                        condition: cond_value,
+                        target: break_label_name.clone(), // 跳转到构造的 break 标签
+                    });
+                }
+
+                // 4. Translate the body of the loop
+                let body_instructions = self.translate_stmt(*body)?;
+                instructions.extend(body_instructions);
+
+                // 5. Add the continue label (target for continue statements)
+                instructions.push(TackyInstruction::Label {
+                    name: continue_label_name.clone(), // 定义构造的 continue 标签
+                });
+
+                // 6. Translate the increment expression
+                if let Some(inc_expr) = increment {
+                    let (inc_instructions, _) = self.translate_expr(*inc_expr)?;
+                    instructions.extend(inc_instructions);
+                }
+
+                // 7. Jump back to the start of the loop condition check (or start for some conventions)
+                //    根据你的 for 循环模式，是跳转回 loop_start_label
+                instructions.push(TackyInstruction::Jump {
+                    target: loop_start_label_name.clone(), // 跳转回构造的 loop_start 标签
+                });
+
+                // 8. Add the end label for the loop (target for break statements)
+                instructions.push(TackyInstruction::Label {
+                    name: break_label_name.clone(), // 定义构造的 break 标签
+                });
+            } // _ => {
+              //     return Err(TackyError {
+              //         message: format!(
+              //             "Unsupported AST statement type for translation: {:?}",
+              //             ast_stmt
+              //         ),
+              //     });
+              // }
         }
 
         Ok(instructions)
