@@ -20,7 +20,6 @@ pub enum SemanticError {
     },
     UndeclaredVariable {
         name: String,
-        // 同上
     },
     InvalidLvalue {
         // 可以尝试描述是什么样的非法左值，
@@ -29,9 +28,7 @@ pub enum SemanticError {
         // 简单起见，可以先不加额外描述，或者只加一个通用的
         description: String, // 例如 "Cannot assign to this expression"
     },
-    UnsupportedStatement {
-        message: String, // 描述不支持的语句类型
-    }, // 其他可能的语义错误
+    Internal(String),
 }
 // Codegen 阶段的错误
 #[derive(Debug, PartialEq, Clone)]
@@ -143,8 +140,9 @@ impl std::fmt::Display for SemanticError {
                     description
                 )
             }
-            SemanticError::UnsupportedStatement { message } => {
-                write!(f, "Semantic Error: Unsupported statement: {}.", message)
+
+            Self::Internal(msg) => {
+                write!(f, "Semantic Error: Internal error: {}", msg)
             }
         }
     }

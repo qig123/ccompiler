@@ -63,6 +63,6 @@ mod tests {
     }
     #[test]
     fn test_all() -> Result<(), CompilerError> {
-        CompilerDriver::run(&test_args(false, true, false, false, false))
+        CompilerDriver::run(&test_args(false, false, true, false, false))
     }
 }

@@ -1,133 +1,161 @@
-//analysis.rs
 use crate::{common_ids, error::SemanticError, parser::c_ast::*};
 use std::collections::HashMap;
 
-fn generate_unique_variable_name(ori: String) -> String {
+fn generate_unique_variable_name_internal(ori: String) -> String {
+    // Renamed to avoid conflict
     common_ids::generate_analysis_variable_name(ori)
 }
 
-// Semantic Analyzer 结构体，可能需要持有对原始源代码的引用
-// 以便在错误报告中获取 Token 的文本和位置
 pub struct SemanticAnalyzer<'a> {
     source: &'a str,
+    scopes: Vec<HashMap<String, String>>, // 作用域栈
+                                          // scopes[0] 是全局作用域 (如果支持的话), scopes.last() 是当前作用域
 }
 
 impl<'a> SemanticAnalyzer<'a> {
     pub fn new(source: &'a str) -> Self {
-        SemanticAnalyzer { source }
+        SemanticAnalyzer {
+            source,
+            scopes: Vec::new(), // 初始化为空栈
+        }
     }
 
-    // 入口函数：分析整个 Program
+    // --- 作用域管理辅助方法 ---
+    fn enter_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn leave_scope(&mut self) {
+        // 确保不会 pop 空栈，尽管在正确使用时这不应该发生
+        if !self.scopes.is_empty() {
+            self.scopes.pop();
+        } else {
+            // 这是一个内部逻辑错误，可能需要 panic 或记录
+            eprintln!("Error: Attempted to leave scope from an empty scope stack.");
+        }
+    }
+
+    // 查找变量的唯一名称
+    fn lookup_variable(&self, user_name: &str) -> Option<&String> {
+        // 从当前作用域 (栈顶) 开始向上查找
+        for scope_map in self.scopes.iter().rev() {
+            if let Some(unique_name) = scope_map.get(user_name) {
+                return Some(unique_name);
+            }
+        }
+        None
+    }
+
+    // --- 主要分析方法 ---
     pub fn analyze(&mut self, program: Program) -> Result<Program, SemanticError> {
+        // 如果有全局作用域的概念，可以在这里 enter_scope()
+        // self.enter_scope(); // 全局作用域 (可选)
+
         let mut analyzed_functions = Vec::new();
         for func in program.functions {
             let analyzed_func = self.analyze_function(func)?;
             analyzed_functions.push(analyzed_func);
         }
+
+        // self.leave_scope(); // 全局作用域 (可选)
         Ok(Program {
             functions: analyzed_functions,
         })
     }
 
-    // 分析单个 Function
     fn analyze_function(&mut self, function: Function) -> Result<Function, SemanticError> {
-        // 为每个函数创建一个新的变量映射 (局部作用域)
-        let mut variable_map: HashMap<String, String> = HashMap::new();
-        // 局部变量计数器也可以在函数内部管理，但为了简单，我们使用了全局计数器
-        // 如果你想限制计数器作用域，可以在这里初始化并传递 mutable reference
+        self.enter_scope(); // 每个函数体开始一个新的作用域
 
-        let analyzed_body = self.analyze_block(function.body, &mut variable_map)?;
+        let mut analyzed_body_items = Vec::new();
+        for block_item_enum in function.body.items {
+            // function.body 是 Vec<Block (as BlockItem)>
+            let analyzed_item = self.analyze_block_item(block_item_enum)?;
+            analyzed_body_items.push(analyzed_item);
+        }
 
-        // 函数名不需要重命名，但可以在这里检查冲突（如果支持全局变量或其他函数的话）
-        // let function_name = function.name.get_lexeme(self.source);
-        // println!("Analyzing function: {}", function_name); // 调试用
+        // println!("Leaving scope for function: {}", function_name_str);
+        self.leave_scope(); // 函数体结束，离开作用域
 
         Ok(Function {
-            name: function.name, // 函数名 Token 不变
-            body: analyzed_body,
+            name: function.name,
+            body: Block {
+                items: analyzed_body_items,
+            },
         })
     }
 
-    // 分析函数体 (Vec<Block>)
-    fn analyze_block(
+    // 分析一个由声明和语句组成的列表 (例如函数体或复合语句的内部)
+    // 这个函数不再直接管理作用域的进入和退出，调用者负责
+    fn analyze_block_items_list(
         &mut self,
-        body: Block,
-        variable_map: &mut HashMap<String, String>,
-    ) -> Result<Block, SemanticError> {
-        let mut analyzed_blocks: Vec<BlockItem> = Vec::new();
-        for block_item in body.items {
-            let analyzed_block = self.analyze_blockitem(block_item, variable_map)?;
-            analyzed_blocks.push(analyzed_block);
+        items: Vec<BlockItem>,
+    ) -> Result<Vec<BlockItem>, SemanticError> {
+        let mut analyzed_items = Vec::new();
+        for item in items {
+            analyzed_items.push(self.analyze_block_item(item)?);
         }
-        Ok(Block {
-            items: analyzed_blocks,
-        })
+        Ok(analyzed_items)
     }
 
-    // 分析单个 Block (Declaration 或 Stmt)
-    fn analyze_blockitem(
+    // 分析单个 BlockItem (Declaration 或 Stmt)
+    // 这个函数也不直接管理作用域，它在已建立的作用域内操作
+    fn analyze_block_item(
         &mut self,
-        block: BlockItem,
-        variable_map: &mut HashMap<String, String>,
+        block_item_enum: BlockItem,
     ) -> Result<BlockItem, SemanticError> {
-        match block {
+        match block_item_enum {
             BlockItem::Declaration(decl) => {
-                let analyzed_decl = self.analyze_declaration(decl, variable_map)?;
+                let analyzed_decl = self.analyze_declaration(decl)?;
                 Ok(BlockItem::Declaration(analyzed_decl))
             }
             BlockItem::Stmt(stmt) => {
-                // 对于语句，variable_map 只会被读取，所以可以传递不可变引用，
-                // 但为了简化 analyze_block 的签名，我们继续传递可变引用，
-                // analyze_statement 内部会使用不可变引用。
-                let analyzed_stmt = self.analyze_statement(stmt, variable_map)?;
+                let analyzed_stmt = self.analyze_statement(stmt)?;
                 Ok(BlockItem::Stmt(analyzed_stmt))
             }
         }
     }
 
-    // 分析 Declaration
     fn analyze_declaration(
         &mut self,
         declaration: Declaration,
-        variable_map: &mut HashMap<String, String>,
     ) -> Result<Declaration, SemanticError> {
         let user_name = declaration.name.get_lexeme(self.source).to_string();
 
-        // 伪代码 ❶: 检查重复声明
-        if variable_map.contains_key(&user_name) {
-            return Err(SemanticError::DuplicateDeclaration { name: user_name });
+        // 获取当前作用域的 map (必须可变)
+        let current_scope_map = self.scopes.last_mut().ok_or_else(|| {
+            SemanticError::Internal("No current scope active for declaration.".to_string())
+        })?;
+
+        // 在当前作用域检查重复声明
+        if current_scope_map.contains_key(&user_name) {
+            return Err(SemanticError::DuplicateDeclaration {
+                name: user_name,
+                // token: declaration.name.clone() // 如果 SemanticError 可以携带 Token
+            });
         }
 
-        // 伪代码 ❷: 生成唯一名称并添加到 map
-        let unique_name = generate_unique_variable_name(user_name.clone());
-        variable_map.insert(user_name, unique_name.clone());
+        let unique_name = generate_unique_variable_name_internal(user_name.clone());
+        current_scope_map.insert(user_name, unique_name.clone());
 
-        // 伪代码 ❸: 解析初始化表达式 (如果存在)
         let analyzed_init = if let Some(init_expr) = declaration.init {
-            let analyzed_expr = self.analyze_expression(*init_expr, variable_map)?; // analyze_expression 只读 map
+            let analyzed_expr = self.analyze_expression(*init_expr)?;
             Some(Box::new(analyzed_expr))
         } else {
             None
         };
 
-        // 伪代码 ❹: 返回新的 Declaration 节点
         Ok(Declaration {
-            name: declaration.name, // 保留原始 Token
-            unique_name,            // 存储生成的唯一名称
+            name: declaration.name,
+            unique_name,
             init: analyzed_init,
         })
     }
 
-    // 分析 Statement
-    fn analyze_statement(
-        &mut self,
-        statement: Stmt,
-        variable_map: &HashMap<String, String>,
-    ) -> Result<Stmt, SemanticError> {
+    fn analyze_statement(&mut self, statement: Stmt) -> Result<Stmt, SemanticError> {
         match statement {
             Stmt::Return { keyword, value } => {
                 let analyzed_value = if let Some(return_expr) = value {
-                    let analyzed_expr = self.analyze_expression(*return_expr, variable_map)?;
+                    let analyzed_expr = self.analyze_expression(*return_expr)?;
                     Some(Box::new(analyzed_expr))
                 } else {
                     None
@@ -138,7 +166,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 })
             }
             Stmt::Expression { exp } => {
-                let analyzed_exp = self.analyze_expression(*exp, variable_map)?;
+                let analyzed_exp = self.analyze_expression(*exp)?;
                 Ok(Stmt::Expression {
                     exp: Box::new(analyzed_exp),
                 })
@@ -149,10 +177,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 then_branch,
                 else_branch,
             } => {
-                let analyzed_condition = self.analyze_expression(*condition, variable_map)?;
-                let analyzed_then_branch = self.analyze_statement(*then_branch, variable_map)?;
+                let analyzed_condition = self.analyze_expression(*condition)?;
+
+                // if 的 then 分支可以是单个语句或一个块，它们都会创建自己的（逻辑上的）作用域
+                // 对于简单的语句，我们不需要显式 enter/leave scope，因为它们不引入新声明
+                // 但如果 then_branch 是 Stmt::Compound，它内部会处理自己的作用域
+                let analyzed_then_branch = self.analyze_statement_scoped(*then_branch)?;
+
                 let analyzed_else_branch = if let Some(else_stmt) = else_branch {
-                    Some(Box::new(self.analyze_statement(*else_stmt, variable_map)?))
+                    Some(Box::new(self.analyze_statement_scoped(*else_stmt)?))
                 } else {
                     None
                 };
@@ -162,115 +195,95 @@ impl<'a> SemanticAnalyzer<'a> {
                     else_branch: analyzed_else_branch,
                 })
             }
-            _ => Err(SemanticError::UnsupportedStatement {
-                message: "Only Return and Expression statements are supported".to_string(),
-            }),
+            Stmt::Compound(block) => {
+                // 假设你的 Stmt 枚举有这个变体
+                self.enter_scope();
+                // println!("Entering scope for compound statement.");
+                let analyzed_items = self.analyze_block_items_list(block.items)?;
+                // println!("Leaving scope for compound statement.");
+                self.leave_scope();
+                Ok(Stmt::Compound(Block {
+                    items: analyzed_items,
+                }))
+            } // 你之前的 _ => Err(...) 可能需要移除或调整，因为 Stmt::Compound 也是一个有效的语句
         }
     }
 
-    // 分析 Expression
-    fn analyze_expression(
-        &mut self,
-        expression: Expr,
-        variable_map: &HashMap<String, String>,
-    ) -> Result<Expr, SemanticError> {
-        match expression {
-            // 伪代码 | Literal(lit)
-            Expr::Literal(lit) => Ok(Expr::Literal(lit)),
+    // 辅助函数，用于分析可能引入新作用域的语句（如复合语句）
+    // 或者只是为了代码结构清晰
+    fn analyze_statement_scoped(&mut self, statement: Stmt) -> Result<Stmt, SemanticError> {
+        // 如果 statement 本身是 Stmt::Compound，它会在 analyze_statement 中处理自己的作用域
+        // 其他类型的语句通常不直接创建新的变量作用域 (除非它们是块)
+        self.analyze_statement(statement)
+    }
 
-            // 伪代码 | Unary(op, exp)
+    fn analyze_expression(&mut self, expression: Expr) -> Result<Expr, SemanticError> {
+        match expression {
+            Expr::Literal(lit) => Ok(Expr::Literal(lit)),
             Expr::Unary { operator, right } => {
-                let analyzed_right = self.analyze_expression(*right, variable_map)?;
+                let analyzed_right = self.analyze_expression(*right)?;
                 Ok(Expr::Unary {
                     operator,
                     right: Box::new(analyzed_right),
                 })
             }
-
-            // 伪代码 | Grouping(exp)
             Expr::Grouping { expression } => {
-                let analyzed_expression = self.analyze_expression(*expression, variable_map)?;
+                let analyzed_expression = self.analyze_expression(*expression)?;
                 Ok(Expr::Grouping {
                     expression: Box::new(analyzed_expression),
                 })
             }
-
-            // 伪代码 | Binary(op, left, right)
             Expr::Binary {
                 operator,
                 left,
                 right,
             } => {
-                let analyzed_left = self.analyze_expression(*left, variable_map)?;
-                let analyzed_right = self.analyze_expression(*right, variable_map)?;
+                let analyzed_left = self.analyze_expression(*left)?;
+                let analyzed_right = self.analyze_expression(*right)?;
                 Ok(Expr::Binary {
                     operator,
                     left: Box::new(analyzed_left),
                     right: Box::new(analyzed_right),
                 })
             }
-
-            // 伪代码 | Var(v)
             Expr::Var {
                 name,
-                unique_name: _,
+                unique_name: _old_unique_name,
             } => {
                 let user_name = name.get_lexeme(self.source).to_string();
-
-                // 伪代码: check if v is in variable_map
-                match variable_map.get(&user_name) {
-                    Some(unique_name) => {
-                        // 伪代码: return Var(variable_map.get(v))
-
-                        Ok(Expr::Var {
-                            name,                             // 保留原始 Token
-                            unique_name: unique_name.clone(), // 添加对应的唯一名称
-                        })
-                    }
-                    None => {
-                        // 伪代码: fail("Undeclared variable!")
-                        Err(SemanticError::UndeclaredVariable { name: user_name })
-                    }
+                match self.lookup_variable(&user_name) {
+                    Some(found_unique_name) => Ok(Expr::Var {
+                        name,
+                        unique_name: found_unique_name.clone(),
+                    }),
+                    None => Err(SemanticError::UndeclaredVariable {
+                        name: user_name,
+                        // token: name.clone() // 如果 SemanticError 可以携带 Token
+                    }),
                 }
             }
-
-            // 伪代码 | Assignment(left, right)
             Expr::Assignment { left, right } => {
-                // 检查左值
-                let (is_valid_lvalue, lvalue_description) = match &*left {
-                    Expr::Var { .. } => (true, String::new()), // 变量是合法的左值
-                    Expr::Literal(_) => (false, "Cannot assign to a literal constant".to_string()),
-                    Expr::Binary { .. } => (
-                        false,
-                        "Cannot assign to the result of a binary operation".to_string(),
-                    ),
-                    Expr::Unary { .. } => (
-                        false,
-                        "Cannot assign to the result of a unary operation".to_string(),
-                    ),
-                    Expr::Grouping { .. } => {
-                        (false, "Cannot assign to a grouped expression".to_string())
-                    }
-                    //有可能合法吗？
-                    Expr::Assignment { .. } => (
-                        false,
-                        "Cannot assign to an assignment expression".to_string(),
-                    ),
-                    _ => (false, "Unsupported left-hand side expression".to_string()),
-                };
+                // 首先分析右侧，因为它可能使用旧的变量值
+                let analyzed_right = self.analyze_expression(*right)?;
+                // 然后分析左侧，确保它是有效的左值，并获取其 unique_name
+                let analyzed_left = self.analyze_expression(*left)?;
 
-                if !is_valid_lvalue {
-                    return Err(SemanticError::InvalidLvalue {
-                        description: lvalue_description,
-                    });
+                // 检查左值是否为 Var (或其他允许的左值类型，如果你的语言更复杂)
+                match &analyzed_left {
+                    Expr::Var { .. } => { /* Var is a valid LValue */ }
+                    _ => {
+                        return Err(SemanticError::InvalidLvalue {
+                            // 最好能提供表达式的文本或位置
+                            description: format!(
+                                "Expression {:?} is not a valid LValue.",
+                                analyzed_left
+                            ),
+                        });
+                    }
                 }
-                // 如果左值合法 (目前只考虑 Var)，继续分析
-                // 注意：analyze_expression(*left, ...) 会确保 Var 的 unique_name 被填充
-                let analyzed_left = self.analyze_expression(*left, variable_map)?;
-                let analyzed_right = self.analyze_expression(*right, variable_map)?;
 
                 Ok(Expr::Assignment {
-                    left: Box::new(analyzed_left),
+                    left: Box::new(analyzed_left), // 已经填充了正确的 unique_name
                     right: Box::new(analyzed_right),
                 })
             }
@@ -279,18 +292,15 @@ impl<'a> SemanticAnalyzer<'a> {
                 left,
                 right,
             } => {
-                let analyzed_condition = self.analyze_expression(*condition, variable_map)?;
-                let analyzed_left = self.analyze_expression(*left, variable_map)?;
-                let analyzed_right = self.analyze_expression(*right, variable_map)?;
+                let analyzed_condition = self.analyze_expression(*condition)?;
+                let analyzed_left = self.analyze_expression(*left)?;
+                let analyzed_right = self.analyze_expression(*right)?;
                 Ok(Expr::Condtional {
                     condition: Box::new(analyzed_condition),
                     left: Box::new(analyzed_left),
                     right: Box::new(analyzed_right),
                 })
-            } // _ => Err(SemanticError::UnsupportedStatement {
-              //     message: "Only Return, Expression, and Assignment expressions are supported"
-              //         .to_string(),
-              // }),
+            }
         }
     }
 }
