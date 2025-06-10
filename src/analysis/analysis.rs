@@ -229,10 +229,7 @@ impl<'a> SemanticAnalyzer<'a> {
                     Expr::Grouping { .. } => {
                         (false, "Cannot assign to a grouped expression".to_string())
                     }
-                    // 对于 Expr::Assignment 作为左值的情况 (e.g. (a=b)=c)，
-                    // C 语言通常允许，因为赋值表达式本身有值且是右值（在某些定义下可以是左值，但会复杂化）。
-                    // 简单起见，我们可以先禁止它，或者允许它但需要更复杂的左值检查。
-                    // 这里暂时将其视为非法左值以简化。
+                    //有可能合法吗？
                     Expr::Assignment { .. } => (
                         false,
                         "Cannot assign to an assignment expression".to_string(),
@@ -244,7 +241,6 @@ impl<'a> SemanticAnalyzer<'a> {
                         description: lvalue_description,
                     });
                 }
-
                 // 如果左值合法 (目前只考虑 Var)，继续分析
                 // 注意：analyze_expression(*left, ...) 会确保 Var 的 unique_name 被填充
                 let analyzed_left = self.analyze_expression(*left, variable_map)?;

@@ -1,6 +1,7 @@
 // translator.rs
 
 use crate::lexer::token::TokenType;
+use crate::parser::c_ast::Block;
 use crate::{common_ids, parser};
 use crate::{error::TackyError, tacky::tacky};
 use parser::c_ast::{
@@ -80,7 +81,6 @@ impl<'a> AstToTackyTranslator<'a> {
         let ast_function = ast_program.functions.into_iter().next().unwrap(); // Take the first function
 
         let tacky_function = self.translate_function(ast_function)?;
-
         Ok(TackyProgram {
             definition: tacky_function,
         })
@@ -91,20 +91,51 @@ impl<'a> AstToTackyTranslator<'a> {
         &mut self,
         ast_function: AstFunction,
     ) -> Result<TackyFunctionDefinition, TackyError> {
-        // let function_name = ast_function.name.get_lexeme(self.source);
-        // let mut tacky_body: Vec<TackyInstruction> = Vec::new();
+        let function_name = ast_function.name.get_lexeme(self.source);
+        let mut tacky_body: Vec<TackyInstruction> = Vec::new();
 
-        // // Translate each statement in the function body
-        // for stmt in ast_function.body {
-        //     let instructions = self.translate_stmt(stmt)?;
-        //     tacky_body.extend(instructions);
-        // }
+        // Translate each statement in the function body
+        for stmt in ast_function.body {
+            let instructions = self.translate_function_body(stmt)?;
+            tacky_body.extend(instructions);
+        }
+        //自动插入 constant 0 返回,后续可以优化
+        tacky_body.push(TackyInstruction::Return(TackyValue::Constant(0)));
+        Ok(TackyFunctionDefinition {
+            name: function_name.to_string(),
+            body: tacky_body,
+        })
+    }
+    fn translate_function_body(
+        &mut self,
+        ast_function: Block,
+    ) -> Result<Vec<TackyInstruction>, TackyError> {
+        let mut instructions: Vec<TackyInstruction> = Vec::new();
 
-        // Ok(TackyFunctionDefinition {
-        //     name: function_name.to_string(),
-        //     body: tacky_body,
-        // })
-        todo!()
+        match ast_function {
+            Block::Stmt(ast_stmt) => {
+                // Translate the AST statement to TACKY instructions
+                let stmt_instructions = self.translate_stmt(ast_stmt)?;
+                instructions.extend(stmt_instructions);
+            }
+            Block::Declaration(decl) => {
+                // Handle variable declaration
+                // For TACKY, we assume declarations are just ignored as they don't affect the flow.
+                // If the declaration has an initializer, we can translate it to a Copy instruction.
+                if let Some(init_expr) = decl.init {
+                    let (init_instructions, init_value) = self.translate_expr(*init_expr)?;
+                    instructions.extend(init_instructions);
+                    // Create a Copy instruction to assign the initial value to the variable
+                    let dest_value = TackyValue::Var(decl.unique_name.clone());
+                    instructions.push(TackyInstruction::Copy {
+                        src: init_value,
+                        dst: dest_value,
+                    });
+                }
+            }
+        }
+
+        Ok(instructions)
     }
 
     // Translates an AST Statement to a sequence of TACKY Instructions
@@ -130,14 +161,23 @@ impl<'a> AstToTackyTranslator<'a> {
                 // Add the final Return instruction
                 instructions.push(TackyInstruction::Return(result_value));
             } // Handle other statement types if the AST had them (e.g., assignments)
-            _ => {
-                return Err(TackyError {
-                    message: format!(
-                        "Unsupported AST statement type for translation: {:?}",
-                        ast_stmt
-                    ),
-                });
+            AstStmt::Expression { exp } => {
+                // Translate the expression statement
+                let (expr_instructions, _result_value) = self.translate_expr(*exp)?;
+                instructions.extend(expr_instructions);
+                // Note: Expression statements in TACKY do not produce a value, so we don't return anything.
             }
+            AstStmt::Null => {
+                // Null statements do nothing, so we can just return an empty instruction list.
+                // This is a no-op in TACKY.
+            } // _ => {
+              //     return Err(TackyError {
+              //         message: format!(
+              //             "Unsupported AST statement type for translation: {:?}",
+              //             ast_stmt
+              //         ),
+              //     });
+              // }
         }
 
         Ok(instructions)
@@ -379,23 +419,47 @@ impl<'a> AstToTackyTranslator<'a> {
                     result_value = result_temp_value;
                 }
             }
-            _ => {
-                return Err(TackyError {
-                    message: format!(
-                        "Unsupported AST expression type for translation: {:?}",
-                        ast_expr
-                    ),
-                });
+            AstExpr::Var {
+                name: _,
+                unique_name,
+            } => {
+                // For a variable, we just need to return its value
+                // The unique_name is the TACKY variable name
+                result_value = TackyValue::Var(unique_name);
             }
+            AstExpr::Assignment { left, right } => {
+                // Handle variable assignment: left = right
+                // Translate the right-hand side first
+                let (right_instructions, right_value) = self.translate_expr(*right)?;
+                instructions.extend(right_instructions);
+
+                // The left side must be a variable (for TACKY)
+                if let AstExpr::Var {
+                    name: _,
+                    unique_name,
+                } = *left
+                {
+                    // Create a Copy instruction to assign the value to the variable
+                    let dest_value = TackyValue::Var(unique_name);
+                    instructions.push(TackyInstruction::Copy {
+                        src: right_value,
+                        dst: dest_value.clone(),
+                    });
+                    result_value = dest_value; // The result of the assignment is the variable itself
+                } else {
+                    return Err(TackyError {
+                        message: "Left-hand side of assignment must be a variable.".to_string(),
+                    });
+                }
+            } // _ => {
+              //     return Err(TackyError {
+              //         message: format!(
+              //             "Unsupported AST expression type for translation: {:?}",
+              //             ast_expr
+              //         ),
+              //     });
+              // }
         }
         Ok((instructions, result_value))
     }
-    // Helper to map AST Token to Tacky UnaryOperator (already done within translate_expr)
-    // fn map_unary_operator(token: &Token) -> Result<TackyUnaryOperator, String> {
-    //     match token.token_type {
-    //         TokenType::Minus => Ok(TackyUnaryOperator::Negate),
-    //         TokenType::Bang => Ok(TackyUnaryOperator::Complement),
-    //         _ => Err(format!("Unknown unary operator token type: {:?}", token.token_type)),
-    //     }
-    // }
 }
