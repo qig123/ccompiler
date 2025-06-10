@@ -7,19 +7,21 @@ pub enum TokenType {
     KeywordInt,    // Keyword: int
     KeywordReturn, // Keyword: return
     KeywordVoid,   // Keyword: void
-    Identifier,    // Identifier: variable or function name
-    LeftParen,     // Symbol: (
-    RightParen,    // Symbol: )
-    LeftBrace,     // Symbol: {
-    RightBrace,    // Symbol: }
-    Comma,         // Symbol: ,
-    Semicolon,     // Symbol: ;
-    LiteralInt,    // Literal: integer value
-    BitwiseNot,    // ~
-    Minus,         // -
-    Decrement,     // --
-    Add,           //+
-    Mul,           //*
+    KeywrodIf,
+    KeywordElse,
+    Identifier, // Identifier: variable or function name
+    LeftParen,  // Symbol: (
+    RightParen, // Symbol: )
+    LeftBrace,  // Symbol: {
+    RightBrace, // Symbol: }
+    Comma,      // Symbol: ,
+    Semicolon,  // Symbol: ;
+    LiteralInt, // Literal: integer value
+    BitwiseNot, // ~
+    Minus,      // -
+    Decrement,  // --
+    Add,        //+
+    Mul,        //*
     Div,
     Remainder,    //%
     Bang,         // !
@@ -32,6 +34,8 @@ pub enum TokenType {
     Greater,      // >
     GreaterEqual, // >=
     Equal,
+    Question, //?
+    Colon,    //:
 
     Eof, // End of file
 }

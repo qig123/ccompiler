@@ -4,8 +4,9 @@
 ✅ **Chapter 1: A Minimal Compiler**  
 ✅ Chapter 2: UNARY OPERATORS  
 ✅ Chapter 3: BINARY OPERATORS  
-⬜ Chapter 4: LOGICAL AND RELATIONAL OPERATORS  
-
+✅ Chapter 4: LOGICAL AND RELATIONAL OPERATORS  
+✅ Chapter 5: LOCAL VARIABLES  
+⬜ Chapter 6: IF STATEMENTS AND CONDITIONAL EXPRESSIONS 
 ---
 
 ## 🛠 编译与运行
