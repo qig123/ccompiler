@@ -36,7 +36,7 @@ impl<'a> SemanticAnalyzer<'a> {
         // 局部变量计数器也可以在函数内部管理，但为了简单，我们使用了全局计数器
         // 如果你想限制计数器作用域，可以在这里初始化并传递 mutable reference
 
-        let analyzed_body = self.analyze_body(function.body, &mut variable_map)?;
+        let analyzed_body = self.analyze_block(function.body, &mut variable_map)?;
 
         // 函数名不需要重命名，但可以在这里检查冲突（如果支持全局变量或其他函数的话）
         // let function_name = function.name.get_lexeme(self.source);
@@ -49,37 +49,38 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     // 分析函数体 (Vec<Block>)
-    fn analyze_body(
+    fn analyze_block(
         &mut self,
-        body: Vec<Block>,
+        body: Block,
         variable_map: &mut HashMap<String, String>,
-    ) -> Result<Vec<Block>, SemanticError> {
-        let mut analyzed_blocks = Vec::new();
-        // 遍历 body 中的 Block，处理声明和语句
-        for block in body {
-            let analyzed_block = self.analyze_block(block, variable_map)?;
+    ) -> Result<Block, SemanticError> {
+        let mut analyzed_blocks: Vec<BlockItem> = Vec::new();
+        for block_item in body.items {
+            let analyzed_block = self.analyze_blockitem(block_item, variable_map)?;
             analyzed_blocks.push(analyzed_block);
         }
-        Ok(analyzed_blocks)
+        Ok(Block {
+            items: analyzed_blocks,
+        })
     }
 
     // 分析单个 Block (Declaration 或 Stmt)
-    fn analyze_block(
+    fn analyze_blockitem(
         &mut self,
-        block: Block,
+        block: BlockItem,
         variable_map: &mut HashMap<String, String>,
-    ) -> Result<Block, SemanticError> {
+    ) -> Result<BlockItem, SemanticError> {
         match block {
-            Block::Declaration(decl) => {
+            BlockItem::Declaration(decl) => {
                 let analyzed_decl = self.analyze_declaration(decl, variable_map)?;
-                Ok(Block::Declaration(analyzed_decl))
+                Ok(BlockItem::Declaration(analyzed_decl))
             }
-            Block::Stmt(stmt) => {
+            BlockItem::Stmt(stmt) => {
                 // 对于语句，variable_map 只会被读取，所以可以传递不可变引用，
                 // 但为了简化 analyze_block 的签名，我们继续传递可变引用，
                 // analyze_statement 内部会使用不可变引用。
                 let analyzed_stmt = self.analyze_statement(stmt, variable_map)?;
-                Ok(Block::Stmt(analyzed_stmt))
+                Ok(BlockItem::Stmt(analyzed_stmt))
             }
         }
     }
@@ -160,9 +161,10 @@ impl<'a> SemanticAnalyzer<'a> {
                     then_branch: Box::new(analyzed_then_branch),
                     else_branch: analyzed_else_branch,
                 })
-            } // _ => Err(SemanticError::UnsupportedStatement {
-              //     message: "Only Return and Expression statements are supported".to_string(),
-              // }),
+            }
+            _ => Err(SemanticError::UnsupportedStatement {
+                message: "Only Return and Expression statements are supported".to_string(),
+            }),
         }
     }
 

@@ -1,7 +1,7 @@
 // translator.rs
 
 use crate::lexer::token::TokenType;
-use crate::parser::c_ast::Block;
+use crate::parser::c_ast::BlockItem;
 use crate::{common_ids, parser};
 use crate::{error::TackyError, tacky::tacky};
 use parser::c_ast::{
@@ -95,8 +95,8 @@ impl<'a> AstToTackyTranslator<'a> {
         let mut tacky_body: Vec<TackyInstruction> = Vec::new();
 
         // Translate each statement in the function body
-        for stmt in ast_function.body {
-            let instructions = self.translate_function_body(stmt)?;
+        for stmt in ast_function.body.items {
+            let instructions = self.translate_function_blockitem(stmt)?;
             tacky_body.extend(instructions);
         }
         //自动插入 constant 0 返回,后续可以优化
@@ -106,19 +106,20 @@ impl<'a> AstToTackyTranslator<'a> {
             body: tacky_body,
         })
     }
-    fn translate_function_body(
+
+    fn translate_function_blockitem(
         &mut self,
-        ast_function: Block,
+        ast_function: BlockItem,
     ) -> Result<Vec<TackyInstruction>, TackyError> {
         let mut instructions: Vec<TackyInstruction> = Vec::new();
 
         match ast_function {
-            Block::Stmt(ast_stmt) => {
+            BlockItem::Stmt(ast_stmt) => {
                 // Translate the AST statement to TACKY instructions
                 let stmt_instructions = self.translate_stmt(ast_stmt)?;
                 instructions.extend(stmt_instructions);
             }
-            Block::Declaration(decl) => {
+            BlockItem::Declaration(decl) => {
                 // Handle variable declaration
                 // For TACKY, we assume declarations are just ignored as they don't affect the flow.
                 // If the declaration has an initializer, we can translate it to a Copy instruction.
@@ -211,14 +212,15 @@ impl<'a> AstToTackyTranslator<'a> {
                 instructions.push(TackyInstruction::Label {
                     name: end_label_name,
                 });
-            } // _ => {
-              //     return Err(TackyError {
-              //         message: format!(
-              //             "Unsupported AST statement type for translation: {:?}",
-              //             ast_stmt
-              //         ),
-              //     });
-              // }
+            }
+            _ => {
+                return Err(TackyError {
+                    message: format!(
+                        "Unsupported AST statement type for translation: {:?}",
+                        ast_stmt
+                    ),
+                });
+            }
         }
 
         Ok(instructions)

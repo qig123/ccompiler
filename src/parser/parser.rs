@@ -2,7 +2,7 @@ use crate::{
     error::ParserError,
     lexer::{Token, token::TokenType},
     parser::c_ast::{
-        BinaryOperator, Block, Declaration, Expr, Function, LiteralExpr, Program, Stmt,
+        BinaryOperator, Block, BlockItem, Declaration, Expr, Function, LiteralExpr, Program, Stmt,
     },
     types::types::Value,
 };
@@ -133,7 +133,7 @@ impl<'a> Parser<'a> {
             TokenType::RightParen,
             "Expected ')' to end function parameters",
         )?;
-        let body = self.parse_body()?;
+        let body = self.parse_block()?;
 
         Ok(Function {
             name: identifier_token,
@@ -141,17 +141,17 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_body(&mut self) -> Result<Vec<Block>, ParserError> {
+    fn parse_block(&mut self) -> Result<Block, ParserError> {
         let mut body = Vec::new();
         self.consume(TokenType::LeftBrace, "Expected '{' to start function body")?;
         while !self.check(TokenType::RightBrace) && !self.is_at_end() {
-            body.push(self.parse_block()?);
+            body.push(self.parse_blockitem()?);
         }
         self.consume(TokenType::RightBrace, "Expected '}' to end function body")?;
-        Ok(body)
+        Ok(Block { items: body })
     }
 
-    fn parse_block(&mut self) -> Result<Block, ParserError> {
+    fn parse_blockitem(&mut self) -> Result<BlockItem, ParserError> {
         if self.check(TokenType::KeywordInt) {
             self.advance(); // 消耗 'int'
             let name_token = self
@@ -167,13 +167,13 @@ impl<'a> Parser<'a> {
                 "Expected ';' after variable declaration",
             )?;
             let name = name_token.get_lexeme(self.source);
-            Ok(Block::Declaration(Declaration {
+            Ok(BlockItem::Declaration(Declaration {
                 name: name_token,
                 init: init.map(Box::new),
                 unique_name: format!("{}", name),
             }))
         } else {
-            Ok(Block::Stmt(self.parse_statement()?))
+            Ok(BlockItem::Stmt(self.parse_statement()?))
         }
     }
 
@@ -197,6 +197,9 @@ impl<'a> Parser<'a> {
                 then_branch: Box::new(then_branch),
                 else_branch: else_branch.map(Box::new),
             })
+        } else if self.check(TokenType::LeftBrace) {
+            let block = self.parse_block()?;
+            Ok(Stmt::Compound(block))
         } else {
             let expr = self.parse_expression()?;
             self.consume(

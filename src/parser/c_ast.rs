@@ -7,10 +7,14 @@ pub struct Program {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub name: Token,
-    pub body: Vec<Block>,
+    pub body: Block,
 }
 #[derive(Debug, Clone, PartialEq)]
-pub enum Block {
+pub struct Block {
+    pub items: Vec<BlockItem>,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum BlockItem {
     Stmt(Stmt),
     Declaration(Declaration),
 }
@@ -36,6 +40,7 @@ pub enum Stmt {
         else_branch: Option<Box<Stmt>>,
     },
     Null,
+    Compound(Block),
 }
 
 #[derive(Debug, Clone, PartialEq)]
