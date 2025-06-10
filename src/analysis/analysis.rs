@@ -143,6 +143,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 })
             }
             Stmt::Null => Ok(Stmt::Null),
+            _ => Err(SemanticError::UnsupportedStatement {
+                message: "Only Return and Expression statements are supported".to_string(),
+            }),
         }
     }
 
@@ -234,6 +237,7 @@ impl<'a> SemanticAnalyzer<'a> {
                         false,
                         "Cannot assign to an assignment expression".to_string(),
                     ),
+                    _ => (false, "Unsupported left-hand side expression".to_string()),
                 };
 
                 if !is_valid_lvalue {
@@ -251,6 +255,10 @@ impl<'a> SemanticAnalyzer<'a> {
                     right: Box::new(analyzed_right),
                 })
             }
+            _ => Err(SemanticError::UnsupportedStatement {
+                message: "Only Return, Expression, and Assignment expressions are supported"
+                    .to_string(),
+            }),
         }
     }
 }

@@ -205,7 +205,7 @@ impl<'a> Lexer<'a> {
                     "int" => self.add_token(TokenType::KeywordInt, None),
                     "return" => self.add_token(TokenType::KeywordReturn, None),
                     "void" => self.add_token(TokenType::KeywordVoid, None),
-                    "if" => self.add_token(TokenType::KeywrodIf, None),
+                    "if" => self.add_token(TokenType::KeywordIf, None),
                     "else" => self.add_token(TokenType::KeywordElse, None),
                     _ => self.add_token(TokenType::Identifier, None),
                 }

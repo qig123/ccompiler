@@ -29,7 +29,9 @@ pub enum SemanticError {
         // 简单起见，可以先不加额外描述，或者只加一个通用的
         description: String, // 例如 "Cannot assign to this expression"
     },
-    // 其他可能的语义错误
+    UnsupportedStatement {
+        message: String, // 描述不支持的语句类型
+    }, // 其他可能的语义错误
 }
 // Codegen 阶段的错误
 #[derive(Debug, PartialEq, Clone)]
@@ -140,6 +142,9 @@ impl std::fmt::Display for SemanticError {
                     "Semantic Error: Invalid assignment target. {}.",
                     description
                 )
+            }
+            SemanticError::UnsupportedStatement { message } => {
+                write!(f, "Semantic Error: Unsupported statement: {}.", message)
             }
         }
     }

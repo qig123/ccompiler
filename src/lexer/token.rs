@@ -7,7 +7,7 @@ pub enum TokenType {
     KeywordInt,    // Keyword: int
     KeywordReturn, // Keyword: return
     KeywordVoid,   // Keyword: void
-    KeywrodIf,
+    KeywordIf,
     KeywordElse,
     Identifier, // Identifier: variable or function name
     LeftParen,  // Symbol: (

@@ -29,6 +29,12 @@ pub enum Stmt {
     Expression {
         exp: Box<Expr>,
     },
+    //现在只支持单语句
+    If {
+        condition: Box<Expr>,
+        then_branch: Box<Stmt>,
+        else_branch: Option<Box<Stmt>>,
+    },
     Null,
 }
 
@@ -55,6 +61,12 @@ pub enum Expr {
         left: Box<Expr>,
         right: Box<Expr>,
     },
+    //三元表达式
+    Condtional {
+        condition: Box<Expr>,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinaryOperator {
@@ -72,6 +84,7 @@ pub enum BinaryOperator {
     Greater,
     GreaterEqual,
     Equal,
+    Question,
 }
 impl BinaryOperator {
     pub fn precedence(&self) -> u8 {
@@ -85,6 +98,7 @@ impl BinaryOperator {
             BinaryOperator::EqualEqual | BinaryOperator::BangEqual => 30,
             BinaryOperator::And => 10,
             BinaryOperator::Or => 5,
+            BinaryOperator::Question => 3,
             BinaryOperator::Equal => 1,
         }
     }

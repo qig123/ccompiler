@@ -170,14 +170,15 @@ impl<'a> AstToTackyTranslator<'a> {
             AstStmt::Null => {
                 // Null statements do nothing, so we can just return an empty instruction list.
                 // This is a no-op in TACKY.
-            } // _ => {
-              //     return Err(TackyError {
-              //         message: format!(
-              //             "Unsupported AST statement type for translation: {:?}",
-              //             ast_stmt
-              //         ),
-              //     });
-              // }
+            }
+            _ => {
+                return Err(TackyError {
+                    message: format!(
+                        "Unsupported AST statement type for translation: {:?}",
+                        ast_stmt
+                    ),
+                });
+            }
         }
 
         Ok(instructions)
@@ -451,14 +452,15 @@ impl<'a> AstToTackyTranslator<'a> {
                         message: "Left-hand side of assignment must be a variable.".to_string(),
                     });
                 }
-            } // _ => {
-              //     return Err(TackyError {
-              //         message: format!(
-              //             "Unsupported AST expression type for translation: {:?}",
-              //             ast_expr
-              //         ),
-              //     });
-              // }
+            }
+            _ => {
+                return Err(TackyError {
+                    message: format!(
+                        "Unsupported AST expression type for translation: {:?}",
+                        ast_expr
+                    ),
+                });
+            }
         }
         Ok((instructions, result_value))
     }
