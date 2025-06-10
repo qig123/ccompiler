@@ -29,6 +29,8 @@ pub enum SemanticError {
         description: String, // 例如 "Cannot assign to this expression"
     },
     Internal(String),
+    MisplacedBreak,
+    MisplacedContinue,
 }
 // Codegen 阶段的错误
 #[derive(Debug, PartialEq, Clone)]
@@ -139,6 +141,12 @@ impl std::fmt::Display for SemanticError {
                     "Semantic Error: Invalid assignment target. {}.",
                     description
                 )
+            }
+            SemanticError::MisplacedBreak => {
+                write!(f, "Semantic Error: 'break' statement is misplaced.")
+            }
+            SemanticError::MisplacedContinue => {
+                write!(f, "Semantic Error: 'continue' statement is misplaced.")
             }
 
             Self::Internal(msg) => {

@@ -5,18 +5,26 @@ fn generate_unique_variable_name_internal(ori: String) -> String {
     // Renamed to avoid conflict
     common_ids::generate_analysis_variable_name(ori)
 }
+// 辅助函数生成唯一的循环标签
+fn generate_unique_loop_label() -> String {
+    static LOOP_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let count = LOOP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("_loop_{}", count)
+}
 
 pub struct SemanticAnalyzer<'a> {
     source: &'a str,
     scopes: Vec<HashMap<String, String>>, // 作用域栈
-                                          // scopes[0] 是全局作用域 (如果支持的话), scopes.last() 是当前作用域
+    // scopes[0] 是全局作用域 (如果支持的话), scopes.last() 是当前作用域
+    loop_label_stack: Vec<String>, // 用于跟踪当前循环标签的栈
 }
 
 impl<'a> SemanticAnalyzer<'a> {
     pub fn new(source: &'a str) -> Self {
         SemanticAnalyzer {
             source,
-            scopes: Vec::new(), // 初始化为空栈
+            scopes: Vec::new(),
+            loop_label_stack: Vec::new(),
         }
     }
 
@@ -34,7 +42,6 @@ impl<'a> SemanticAnalyzer<'a> {
             eprintln!("Error: Attempted to leave scope from an empty scope stack.");
         }
     }
-
     // 查找变量的唯一名称
     fn lookup_variable(&self, user_name: &str) -> Option<&String> {
         // 从当前作用域 (栈顶) 开始向上查找
@@ -44,6 +51,23 @@ impl<'a> SemanticAnalyzer<'a> {
             }
         }
         None
+    }
+
+    // --- 循环标签管理辅助方法 ---
+    fn enter_loop(&mut self, loop_label: String) {
+        self.loop_label_stack.push(loop_label);
+    }
+
+    fn leave_loop(&mut self) {
+        if !self.loop_label_stack.is_empty() {
+            self.loop_label_stack.pop();
+        } else {
+            eprintln!("Error: Attempted to leave loop from an empty loop label stack.");
+        }
+    }
+
+    fn get_current_loop_label(&self) -> Option<&String> {
+        self.loop_label_stack.last()
     }
 
     // --- 主要分析方法 ---
@@ -206,10 +230,105 @@ impl<'a> SemanticAnalyzer<'a> {
                     items: analyzed_items,
                 }))
             }
-            _ => Err(SemanticError::Internal(format!(
-                "Unhandled statement type: {:?}",
-                statement
-            ))), // 你之前的 _ => Err(...) 可能需要移除或调整，因为 Stmt::Compound 也是一个有效的语句
+            Stmt::Break(_label_placeholder) => {
+                if let Some(current_loop_label) = self.get_current_loop_label() {
+                    Ok(Stmt::Break(current_loop_label.clone()))
+                } else {
+                    Err(SemanticError::MisplacedBreak)
+                }
+            }
+            Stmt::Continue(_label_placeholder) => {
+                if let Some(current_loop_label) = self.get_current_loop_label() {
+                    Ok(Stmt::Continue(current_loop_label.clone()))
+                } else {
+                    Err(SemanticError::MisplacedContinue)
+                }
+            }
+            Stmt::While {
+                condition,
+                body,
+                label: _,
+            } => {
+                // label 将被新生成的替换
+                let loop_label = generate_unique_loop_label();
+                self.enter_loop(loop_label.clone());
+
+                let analyzed_condition = self.analyze_expression(*condition)?;
+                // 循环体在新的循环上下文中分析
+                let analyzed_body = self.analyze_statement_scoped(*body)?;
+                self.leave_loop();
+                Ok(Stmt::While {
+                    condition: Box::new(analyzed_condition),
+                    body: Box::new(analyzed_body),
+                    label: loop_label,
+                })
+            }
+            Stmt::DoWhile {
+                body,
+                condtion,
+                label: _,
+            } => {
+                // label 将被新生成的替换
+                let loop_label = generate_unique_loop_label();
+                self.enter_loop(loop_label.clone());
+                // Do-while 的 body 先执行
+                let analyzed_body = self.analyze_statement_scoped(*body)?;
+                let analyzed_condition = self.analyze_expression(*condtion)?;
+
+                self.leave_loop();
+                Ok(Stmt::DoWhile {
+                    body: Box::new(analyzed_body),
+                    condtion: Box::new(analyzed_condition),
+                    label: loop_label,
+                })
+            }
+            Stmt::For {
+                init,
+                condition,
+                increment,
+                body,
+                label: _,
+            } => {
+                let loop_label = generate_unique_loop_label();
+
+                self.enter_scope(); // for 循环头和 body 共享一个作用域
+                self.enter_loop(loop_label.clone()); // 进入循环标签上下文
+
+                let analyzed_init = match init {
+                    ForInit::InitDecl(decl) => ForInit::InitDecl(self.analyze_declaration(decl)?),
+                    ForInit::InitExp(opt_expr) => ForInit::InitExp(
+                        opt_expr
+                            .map(|expr| self.analyze_expression(*expr))
+                            .transpose()?
+                            .map(Box::new),
+                    ),
+                };
+
+                let analyzed_condition = condition
+                    .map(|expr| self.analyze_expression(*expr))
+                    .transpose()?
+                    .map(Box::new);
+                let analyzed_increment = increment
+                    .map(|expr| self.analyze_expression(*expr))
+                    .transpose()?
+                    .map(Box::new);
+
+                let analyzed_body = self.analyze_statement_scoped(*body)?;
+
+                self.leave_loop(); // 离开循环标签上下文
+                self.leave_scope(); // 离开 for 循环的作用域
+
+                Ok(Stmt::For {
+                    init: analyzed_init,
+                    condition: analyzed_condition,
+                    increment: analyzed_increment,
+                    body: Box::new(analyzed_body),
+                    label: loop_label,
+                })
+            } // _ => Err(SemanticError::Internal(format!(
+              //     "Unhandled statement type: {:?}",
+              //     statement
+              // ))),
         }
     }
 
