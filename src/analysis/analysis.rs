@@ -143,9 +143,26 @@ impl<'a> SemanticAnalyzer<'a> {
                 })
             }
             Stmt::Null => Ok(Stmt::Null),
-            _ => Err(SemanticError::UnsupportedStatement {
-                message: "Only Return and Expression statements are supported".to_string(),
-            }),
+            Stmt::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let analyzed_condition = self.analyze_expression(*condition, variable_map)?;
+                let analyzed_then_branch = self.analyze_statement(*then_branch, variable_map)?;
+                let analyzed_else_branch = if let Some(else_stmt) = else_branch {
+                    Some(Box::new(self.analyze_statement(*else_stmt, variable_map)?))
+                } else {
+                    None
+                };
+                Ok(Stmt::If {
+                    condition: Box::new(analyzed_condition),
+                    then_branch: Box::new(analyzed_then_branch),
+                    else_branch: analyzed_else_branch,
+                })
+            } // _ => Err(SemanticError::UnsupportedStatement {
+              //     message: "Only Return and Expression statements are supported".to_string(),
+              // }),
         }
     }
 
@@ -255,10 +272,23 @@ impl<'a> SemanticAnalyzer<'a> {
                     right: Box::new(analyzed_right),
                 })
             }
-            _ => Err(SemanticError::UnsupportedStatement {
-                message: "Only Return, Expression, and Assignment expressions are supported"
-                    .to_string(),
-            }),
+            Expr::Condtional {
+                condition,
+                left,
+                right,
+            } => {
+                let analyzed_condition = self.analyze_expression(*condition, variable_map)?;
+                let analyzed_left = self.analyze_expression(*left, variable_map)?;
+                let analyzed_right = self.analyze_expression(*right, variable_map)?;
+                Ok(Expr::Condtional {
+                    condition: Box::new(analyzed_condition),
+                    left: Box::new(analyzed_left),
+                    right: Box::new(analyzed_right),
+                })
+            } // _ => Err(SemanticError::UnsupportedStatement {
+              //     message: "Only Return, Expression, and Assignment expressions are supported"
+              //         .to_string(),
+              // }),
         }
     }
 }
