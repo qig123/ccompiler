@@ -25,6 +25,11 @@ pub struct Declaration {
     pub unique_name: String, // 新增字段，存储生成的唯一名称
 }
 #[derive(Debug, Clone, PartialEq)]
+pub enum ForInit {
+    InitDecl(Declaration),
+    InitExp(Option<Box<Expr>>),
+}
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Return {
         keyword: Token,
@@ -33,7 +38,6 @@ pub enum Stmt {
     Expression {
         exp: Box<Expr>,
     },
-    //现在只支持单语句
     If {
         condition: Box<Expr>,
         then_branch: Box<Stmt>,
@@ -41,6 +45,25 @@ pub enum Stmt {
     },
     Null,
     Compound(Block),
+    Break(String),
+    Continue(String),
+    While {
+        condition: Box<Expr>,
+        body: Box<Stmt>,
+        label: String,
+    },
+    DoWhile {
+        body: Box<Stmt>,
+        condtion: Box<Expr>,
+        label: String,
+    },
+    For {
+        init: ForInit,
+        condition: Option<Box<Expr>>,
+        increment: Option<Box<Expr>>,
+        body: Box<Stmt>,
+        label: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,7 +89,6 @@ pub enum Expr {
         left: Box<Expr>,
         right: Box<Expr>,
     },
-    //三元表达式
     Condtional {
         condition: Box<Expr>,
         left: Box<Expr>,

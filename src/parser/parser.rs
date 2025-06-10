@@ -2,7 +2,8 @@ use crate::{
     error::ParserError,
     lexer::{Token, token::TokenType},
     parser::c_ast::{
-        BinaryOperator, Block, BlockItem, Declaration, Expr, Function, LiteralExpr, Program, Stmt,
+        BinaryOperator, Block, BlockItem, Declaration, Expr, ForInit, Function, LiteralExpr,
+        Program, Stmt,
     },
     types::types::Value,
 };
@@ -200,6 +201,72 @@ impl<'a> Parser<'a> {
         } else if self.check(TokenType::LeftBrace) {
             let block = self.parse_block()?;
             Ok(Stmt::Compound(block))
+        } else if self.match_token(&[TokenType::KeywordBreak]) {
+            self.consume(TokenType::Semicolon, "Expected ';' after break statement")?;
+            Ok(Stmt::Break(String::new()))
+        } else if self.match_token(&[TokenType::KeywordContinue]) {
+            self.consume(
+                TokenType::Semicolon,
+                "Expected ';' after continue statement",
+            )?;
+            Ok(Stmt::Continue(String::new()))
+        } else if self.match_token(&[TokenType::KeywordWhile]) {
+            self.consume(TokenType::LeftParen, "Expected '(' after while")?;
+            let condition = self.parse_expression()?;
+            self.consume(TokenType::RightParen, "Expected ')' after while condition")?;
+            let body = self.parse_statement()?;
+            Ok(Stmt::While {
+                condition: Box::new(condition),
+                body: Box::new(body),
+                label: String::new(),
+            })
+        } else if self.match_token(&[TokenType::KeywordDo]) {
+            let body = self.parse_statement()?;
+            self.consume(
+                TokenType::KeywordWhile,
+                "Expected 'while' after do-while body",
+            )?;
+            self.consume(TokenType::LeftParen, "Expected '(' after do-while")?;
+            let condition = self.parse_expression()?;
+            self.consume(
+                TokenType::RightParen,
+                "Expected ')' after do-while condition",
+            )?;
+            self.consume(
+                TokenType::Semicolon,
+                "Expected ';' after do-while statement",
+            )?;
+            Ok(Stmt::DoWhile {
+                body: Box::new(body),
+                condtion: Box::new(condition),
+                label: String::new(),
+            })
+        } else if self.match_token(&[TokenType::KeywordFor]) {
+            self.consume(TokenType::LeftParen, "Expected '(' after for")?;
+
+            let init = self.parse_for_initializer()?;
+            self.consume(
+                TokenType::Semicolon,
+                "Expected ';' after for-loop initializer",
+            )?;
+
+            let condition = self.parse_optional_expression_until(TokenType::Semicolon)?;
+            self.consume(
+                TokenType::Semicolon,
+                "Expected ';' after for-loop condition",
+            )?;
+
+            let increment = self.parse_optional_expression_until(TokenType::RightParen)?;
+            self.consume(TokenType::RightParen, "Expected ')' after for-loop clauses")?;
+
+            let body = self.parse_statement()?;
+            Ok(Stmt::For {
+                init,
+                condition,
+                increment,
+                body: Box::new(body),
+                label: String::new(),
+            })
         } else {
             let expr = self.parse_expression()?;
             self.consume(
@@ -224,6 +291,44 @@ impl<'a> Parser<'a> {
             keyword,
             value: value.map(Box::new),
         })
+    }
+    fn parse_for_initializer(&mut self) -> Result<ForInit, ParserError> {
+        if self.check(TokenType::KeywordInt) {
+            self.advance(); // 消耗 "int"
+            let name_token = self
+                .consume(
+                    TokenType::Identifier,
+                    "Expected variable name in for-loop declaration",
+                )?
+                .clone();
+            let init_expr_opt = if self.match_token(&[TokenType::Equal]) {
+                Some(Box::new(self.parse_expression()?))
+            } else {
+                None
+            };
+            Ok(ForInit::InitDecl(Declaration {
+                name: name_token,
+                init: init_expr_opt,
+                unique_name: String::new(),
+            }))
+        } else {
+            // 如果不是声明，尝试解析可选表达式，该表达式以 ';' 结束
+            // (注意: parse_optional_expression_until 不消耗结束符)
+            let init_expr_opt = self.parse_optional_expression_until(TokenType::Semicolon)?;
+            Ok(ForInit::InitExp(init_expr_opt))
+        }
+    }
+    fn parse_optional_expression_until(
+        &mut self,
+        end_token_type: TokenType,
+    ) -> Result<Option<Box<Expr>>, ParserError> {
+        if self.check(end_token_type.clone()) {
+            Ok(None) // 表达式是可选的，并且当前是结束符，所以表达式不存在
+        } else {
+            // 存在表达式，解析它
+            let expr = self.parse_expression()?;
+            Ok(Some(Box::new(expr)))
+        }
     }
 
     // --- 表达式解析 (Pratt Parser) ---

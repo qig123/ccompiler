@@ -219,14 +219,15 @@ impl<'a> AstToTackyTranslator<'a> {
                     let item_instructions = self.translate_function_blockitem(item)?;
                     instructions.extend(item_instructions);
                 }
-            } // _ => {
-              //     return Err(TackyError {
-              //         message: format!(
-              //             "Unsupported AST statement type for translation: {:?}",
-              //             ast_stmt
-              //         ),
-              //     });
-              // }
+            }
+            _ => {
+                return Err(TackyError {
+                    message: format!(
+                        "Unsupported AST statement type for translation: {:?}",
+                        ast_stmt
+                    ),
+                });
+            }
         }
 
         Ok(instructions)

@@ -205,7 +205,11 @@ impl<'a> SemanticAnalyzer<'a> {
                 Ok(Stmt::Compound(Block {
                     items: analyzed_items,
                 }))
-            } // 你之前的 _ => Err(...) 可能需要移除或调整，因为 Stmt::Compound 也是一个有效的语句
+            }
+            _ => Err(SemanticError::Internal(format!(
+                "Unhandled statement type: {:?}",
+                statement
+            ))), // 你之前的 _ => Err(...) 可能需要移除或调整，因为 Stmt::Compound 也是一个有效的语句
         }
     }
 
