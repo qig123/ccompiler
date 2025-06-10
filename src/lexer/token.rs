@@ -9,6 +9,11 @@ pub enum TokenType {
     KeywordVoid,   // Keyword: void
     KeywordIf,
     KeywordElse,
+    KeywordFor,
+    KeywordWhile,
+    KeywordBreak,
+    KeywordContinue,
+    KeywordDo,
     Identifier, // Identifier: variable or function name
     LeftParen,  // Symbol: (
     RightParen, // Symbol: )

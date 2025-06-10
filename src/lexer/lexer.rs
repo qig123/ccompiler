@@ -207,6 +207,11 @@ impl<'a> Lexer<'a> {
                     "void" => self.add_token(TokenType::KeywordVoid, None),
                     "if" => self.add_token(TokenType::KeywordIf, None),
                     "else" => self.add_token(TokenType::KeywordElse, None),
+                    "for" => self.add_token(TokenType::KeywordFor, None),
+                    "do" => self.add_token(TokenType::KeywordDo, None),
+                    "while" => self.add_token(TokenType::KeywordWhile, None),
+                    "break" => self.add_token(TokenType::KeywordBreak, None),
+                    "continue" => self.add_token(TokenType::KeywordContinue, None),
                     _ => self.add_token(TokenType::Identifier, None),
                 }
                 Ok(())
