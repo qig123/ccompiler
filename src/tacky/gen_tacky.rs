@@ -171,14 +171,54 @@ impl<'a> AstToTackyTranslator<'a> {
                 // Null statements do nothing, so we can just return an empty instruction list.
                 // This is a no-op in TACKY.
             }
-            _ => {
-                return Err(TackyError {
-                    message: format!(
-                        "Unsupported AST statement type for translation: {:?}",
-                        ast_stmt
-                    ),
+            AstStmt::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                // Translate the condition expression
+                let (cond_instructions, cond_value) = self.translate_expr(*condition)?;
+                instructions.extend(cond_instructions);
+
+                // Generate labels for the true and false branches
+                let else_label_name = self.label_generator.next();
+                let end_label_name = self.label_generator.next();
+
+                instructions.push(TackyInstruction::JumpIfZero {
+                    condition: cond_value,
+                    target: else_label_name.clone(),
                 });
-            }
+                let then_instructions = self.translate_stmt(*then_branch)?;
+                instructions.extend(then_instructions);
+
+                // 跳过else分支
+                instructions.push(TackyInstruction::Jump {
+                    target: end_label_name.clone(),
+                });
+
+                // else分支标签
+                instructions.push(TackyInstruction::Label {
+                    name: else_label_name,
+                });
+
+                // 翻译else分支
+                if let Some(else_branch) = else_branch {
+                    let else_instructions = self.translate_stmt(*else_branch)?;
+                    instructions.extend(else_instructions);
+                }
+
+                // 结束标签
+                instructions.push(TackyInstruction::Label {
+                    name: end_label_name,
+                });
+            } // _ => {
+              //     return Err(TackyError {
+              //         message: format!(
+              //             "Unsupported AST statement type for translation: {:?}",
+              //             ast_stmt
+              //         ),
+              //     });
+              // }
         }
 
         Ok(instructions)
@@ -453,14 +493,57 @@ impl<'a> AstToTackyTranslator<'a> {
                     });
                 }
             }
-            _ => {
-                return Err(TackyError {
-                    message: format!(
-                        "Unsupported AST expression type for translation: {:?}",
-                        ast_expr
-                    ),
+            AstExpr::Condtional {
+                condition,
+                left,
+                right,
+            } => {
+                // Translate the condition first
+                let (cond_instructions, cond_value) = self.translate_expr(*condition)?;
+                instructions.extend(cond_instructions);
+
+                // Generate labels for the true and false branches
+                let false_label_name = self.label_generator.next();
+                let end_label_name = self.label_generator.next();
+                // if condtion is false ,we will jump to false_label_name
+                instructions.push(TackyInstruction::JumpIfZero {
+                    condition: cond_value,
+                    target: false_label_name.clone(),
                 });
-            }
+                // Translate the left side (true branch)
+                let (left_instructions, left_value) = self.translate_expr(*left)?;
+                instructions.extend(left_instructions);
+                let result_temp = self.temp_generator.next(); // 显式分配临时变量存储结果
+                instructions.push(TackyInstruction::Copy {
+                    src: left_value,
+                    dst: TackyValue::Var(result_temp.clone()),
+                }); //jump to end_label_name
+                instructions.push(TackyInstruction::Jump {
+                    target: end_label_name.clone(),
+                });
+                instructions.push(TackyInstruction::Label {
+                    name: false_label_name,
+                });
+                // Translate the right side (false branch)
+                let (right_instructions, right_value) = self.translate_expr(*right)?;
+                instructions.extend(right_instructions);
+                instructions.push(TackyInstruction::Copy {
+                    src: right_value,
+                    dst: TackyValue::Var(result_temp.clone()),
+                });
+                // End label for the conditional
+                instructions.push(TackyInstruction::Label {
+                    name: end_label_name,
+                });
+                result_value = TackyValue::Var(result_temp);
+            } // _ => {
+              //     return Err(TackyError {
+              //         message: format!(
+              //             "Unsupported AST expression type for translation: {:?}",
+              //             ast_expr
+              //         ),
+              //     });
+              // }
         }
         Ok((instructions, result_value))
     }
