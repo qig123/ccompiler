@@ -6,13 +6,15 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::backend::ass_gen::AssGen;
 use crate::frontend::c_ast::AstNode;
 use crate::frontend::c_ast::PrettyPrinter;
+use crate::frontend::c_ast::Program;
 use crate::frontend::lexer;
 use crate::frontend::parser;
 
+mod backend;
 mod frontend;
-
 /// RAII Guard: 在其生命周期结束时自动清理指定的文件。
 #[derive(Debug)]
 struct FileJanitor {
@@ -142,14 +144,14 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     }
 
     // 步骤 C: 语法分析
-    parse(tokens)?; // parse 应该接收 tokens
+    let ast = parse(tokens)?; // parse 应该接收 tokens
     if cli.parse {
         println!("--parse: 语法分析完成，程序停止。");
         return Ok(());
     }
 
     // 步骤 D: 代码生成
-    let assembly_code = codegen(&preprocessed_path)?;
+    let assembly_code = codegen(&preprocessed_path, ast)?;
     if cli.codegen {
         println!("--codegen: 汇编代码生成完成，程序停止。");
         return Ok(());
@@ -242,7 +244,7 @@ fn lex(input: &Path) -> Result<Vec<lexer::Token>, String> {
 }
 
 /// 步骤 C: 语法分析 (占位符)
-fn parse(tokens: Vec<lexer::Token>) -> Result<(), String> {
+fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
     println!("\n(3) 正在进行语法分析 (输入 {} 个 token)", tokens.len());
     let parser = parser::Parser::new(tokens);
     let program = parser.parse()?;
@@ -253,11 +255,16 @@ fn parse(tokens: Vec<lexer::Token>) -> Result<(), String> {
     let mut printer = PrettyPrinter::new();
     program.pretty_print(&mut printer);
     println!();
-    Ok(())
+    Ok(program)
 }
 
 /// 步骤 D: 代码生成 (占位符)
-fn codegen(input: &Path) -> Result<String, String> {
+fn codegen(input: &Path, c_ast: Program) -> Result<String, String> {
+    //先要生成汇编Ast
+    let mut ass_gen = AssGen::new();
+    let ass_ast = ass_gen.generate_ass_ast(c_ast)?;
+    println!("{:?}", ass_ast);
+
     println!("(4) 正在生成汇编代码: {}", input.display());
     // 在这里实现你的代码生成逻辑r
     // 如果成功，返回一个包含完整汇编代码的 String
