@@ -6,6 +6,53 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod lexer;
+
+// 在你的文件顶部或一个新模块中添加这个结构体
+/// RAII Guard: 在其生命周期结束时自动清理指定的文件。
+#[derive(Debug)]
+struct FileJanitor {
+    /// 需要被清理的文件路径列表
+    files_to_clean: Vec<PathBuf>,
+}
+
+impl FileJanitor {
+    /// 创建一个新的 Janitor
+    fn new(files: Vec<PathBuf>) -> Self {
+        FileJanitor {
+            files_to_clean: files,
+        }
+    }
+
+    /// "解除" 对某个文件的清理责任。
+    /// 当我们希望在成功时保留某个文件（如最终的可执行文件或 .s 文件）时调用。
+    fn keep(&mut self, path_to_keep: &Path) {
+        self.files_to_clean.retain(|p| p != path_to_keep);
+    }
+}
+
+/// 这是魔法发生的地方！
+/// 当 FileJanitor 实例离开作用域时，`drop` 方法会被自动调用。
+impl Drop for FileJanitor {
+    fn drop(&mut self) {
+        if self.files_to_clean.is_empty() {
+            return;
+        }
+        println!("--- 自动清理 ---");
+        for file in &self.files_to_clean {
+            if file.exists() {
+                // 我们在这里忽略 remove_file 可能的错误，因为清理失败不应使整个程序崩溃。
+                // 在更复杂的应用中，你可能会记录这个错误。
+                if let Err(e) = fs::remove_file(file) {
+                    eprintln!("警告: 清理临时文件 {} 失败: {}", file.display(), e);
+                } else {
+                    println!("   已清理: {}", file.display());
+                }
+            }
+        }
+    }
+}
+
 /// 一个C语言编译器驱动程序
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -30,20 +77,27 @@ struct Cli {
     save_assembly: bool, // 使用更有描述性的字段名
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     let cli = Cli::parse();
-    // 将所有核心逻辑放入一个返回 Result 的函数中，方便使用 `?` 操作符
-    run_compiler(cli)
-}
-
-fn run_compiler(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
-    // --- 1. 路径和文件校验 ---
-    if !cli.source_file.exists() {
-        eprintln!("错误: 输入文件不存在: {}", cli.source_file.display());
+    let result = run_compiler(cli);
+    eprintln!("\n>>> FINAL COMPILER RESULT: {:?}\n", result);
+    if let Err(e) = result {
+        eprintln!("Error: {}", e);
         std::process::exit(1);
     }
+}
+
+fn run_compiler(cli: Cli) -> Result<(), String> {
+    // --- 1. 路径和文件校验 ---
+    if !cli.source_file.exists() {
+        return Err(format!(
+            "错误: 输入文件不存在: {}",
+            cli.source_file.display()
+        ));
+    }
     if cli.source_file.extension().unwrap_or_default() != "c" {
-        eprintln!(
+        println!(
+            // 改为 println，因为它是一个警告而非致命错误
             "警告: 输入文件 '{}' 可能不是一个C源文件 (.c)",
             cli.source_file.display()
         );
@@ -51,65 +105,79 @@ fn run_compiler(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     // --- 2. 定义所有中间和最终文件路径 ---
     let input_path = &cli.source_file;
-    // 输出的可执行文件路径，例如 "program.c" -> "program"
     let output_exe_path = input_path.with_extension("");
-    // 预处理后的中间文件路径，例如 "program.c" -> "program.i"
     let preprocessed_path = input_path.with_extension("i");
-    // 汇编文件的路径，例如 "program.c" -> "program.s"
     let assembly_path = input_path.with_extension("s");
 
+    // --- 2.5. 【核心改动】创建并"武装"我们的清理卫兵 ---
+    // 将所有可能生成的都文件交给 Janitor 管理
+    let mut janitor = FileJanitor::new(vec![
+        preprocessed_path.clone(),
+        assembly_path.clone(),
+        output_exe_path.clone(),
+    ]);
+
+    // 【新功能】在开始前，先清理一次上次可能遗留的文件
+    // drop 会立即调用，执行一次性清理
+    drop(FileJanitor::new(vec![
+        preprocessed_path.clone(),
+        assembly_path.clone(),
+        output_exe_path.clone(),
+    ]));
+
     // --- 3. 编译流程 (Pipeline) ---
+    // 任何下面的 `?` 失败，都会导致 run_compiler 退出，
+    // `janitor` 会被 drop，从而自动清理所有文件。
 
-    // 步骤 A: 预处理 (总是执行)
-    // gcc -E -P <input_path> -o <preprocessed_path>
-    preprocess(input_path, &preprocessed_path)?;
+    // 步骤 A: 预处理
+    preprocess(input_path, &preprocessed_path).map_err(|e| e.to_string())?;
 
-    // 步骤 B: 词法分析 (你的编译器)
-    // 在这里，你应该调用你的词法分析器函数
-    lex(&preprocessed_path)?; // 这是一个占位符
+    // 步骤 B: 词法分析
+    let tokens = lex(&preprocessed_path)?;
     if cli.lex {
         println!("--lex: 词法分析完成，程序停止。");
-        cleanup(&[&preprocessed_path])?;
+        // 当函数在这里返回时，janitor 会自动清理 .i 文件
         return Ok(());
     }
 
-    // 步骤 C: 语法分析 (你的编译器)
-    parse(&preprocessed_path)?; // 这是一个占位符
+    // 步骤 C: 语法分析
+    parse(&tokens)?; // parse 应该接收 tokens
     if cli.parse {
         println!("--parse: 语法分析完成，程序停止。");
-        cleanup(&[&preprocessed_path])?;
         return Ok(());
     }
 
-    // 步骤 D: 代码生成 (你的编译器)
-    // 这个函数应该返回生成的汇编代码字符串
-    let assembly_code = codegen(&preprocessed_path)?; // 这是一个占位符
+    // 步骤 D: 代码生成
+    let assembly_code = codegen(&preprocessed_path)?;
     if cli.codegen {
         println!("--codegen: 汇编代码生成完成，程序停止。");
-        cleanup(&[&preprocessed_path])?;
         return Ok(());
     }
 
     // 步骤 E: 发射汇编代码
-    // 将生成的汇编代码写入 .s 文件
-    fs::write(&assembly_path, assembly_code)?;
+    fs::write(&assembly_path, assembly_code).map_err(|e| e.to_string())?;
     println!("✅ 汇编代码已生成到: {}", assembly_path.display());
 
     // 步骤 F: 处理 -S 选项
     if cli.save_assembly {
+        // 我们想保留 .s 文件，所以告诉 janitor 不要清理它
+        janitor.keep(&assembly_path);
         println!("-S: 保留汇编文件，不进行链接。");
-        cleanup(&[&preprocessed_path])?; // 只清理预处理文件
+        // janitor 在这里 drop，会清理 .i 文件，但保留 .s 文件
         return Ok(());
     }
 
-    // 步骤 G: 汇编与链接 (默认行为)
-    // gcc <assembly_path> -o <output_exe_path>
-    assemble_and_link(&assembly_path, &output_exe_path)?;
+    // 步骤 G: 汇编与链接
+    assemble_and_link(&assembly_path, &output_exe_path).map_err(|e| e.to_string())?;
 
-    // --- 4. 清理所有中间文件 ---
-    cleanup(&[&preprocessed_path, &assembly_path])?;
+    // --- 4. 【核心改动】成功完成，"解除"对最终文件的清理 ---
+    // 如果程序运行到这里，说明一切顺利。我们想保留可执行文件。
+    janitor.keep(&output_exe_path);
     println!("✅ 编译成功！可执行文件在: {}", output_exe_path.display());
 
+    // 当函数在这里正常结束时，janitor 会被 drop。
+    // 由于我们调用了 janitor.keep(&output_exe_path)，
+    // 它只会清理 .i 和 .s 文件，而保留最终的可执行文件。
     Ok(())
 }
 
@@ -161,37 +229,30 @@ fn assemble_and_link(assembly_file: &Path, output_exe: &Path) -> io::Result<()> 
     Ok(())
 }
 
-/// 清理中间文件
-fn cleanup(files: &[&PathBuf]) -> io::Result<()> {
-    for file in files {
-        if file.exists() {
-            println!("   清理临时文件: {}", file.display());
-            fs::remove_file(file)?;
-        }
-    }
-    Ok(())
-}
-
 // --- 以下是你的编译器核心逻辑的占位符 (Placeholder) ---
 
-/// 步骤 B: 词法分析 (占位符)
-fn lex(input: &Path) -> Result<(), io::Error> {
+// 步骤 B: 词法分析 (占位符)
+// 让它返回 Vec<Token>
+fn lex(input: &Path) -> Result<Vec<lexer::Token>, String> {
     println!("(2) 正在进行词法分析: {}", input.display());
-    // 在这里实现你的词法分析逻辑
-    // 如果发现词法错误，返回 Err
-    Ok(())
+    let lexer = lexer::Lexer::new();
+    let content = fs::read_to_string(input).map_err(|e| e.to_string())?;
+    let tokens = lexer.lex(&content)?; // 直接使用 `?`
+    println!("✅ 词法分析完成，生成 {} 个 token", tokens.len());
+    // 如果需要打印，可以在这里循环
+    // for token in &tokens { println!("{:?}", token); }
+    Ok(tokens)
 }
 
 /// 步骤 C: 语法分析 (占位符)
-fn parse(input: &Path) -> Result<(), io::Error> {
-    println!("(3) 正在进行语法分析: {}", input.display());
+fn parse(tokens: &[lexer::Token]) -> Result<(), String> {
+    println!("(3) 正在进行语法分析 (输入 {} 个 token)", tokens.len());
     // 在这里实现你的语法分析逻辑
-    // 如果发现语法错误，返回 Err
     Ok(())
 }
 
 /// 步骤 D: 代码生成 (占位符)
-fn codegen(input: &Path) -> Result<String, io::Error> {
+fn codegen(input: &Path) -> Result<String, String> {
     println!("(4) 正在生成汇编代码: {}", input.display());
     // 在这里实现你的代码生成逻辑r
     // 如果成功，返回一个包含完整汇编代码的 String
@@ -213,14 +274,14 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn test_default_compilation() {
+    fn test_default_compilation() -> Result<(), String> {
         let cli = Cli {
-            source_file: PathBuf::from(r"./tests/input.c"),
-            lex: true,
+            source_file: PathBuf::from(r"./tests/program.c"),
+            lex: false,
             parse: false,
             codegen: false,
             save_assembly: false,
         };
-        let _s = run_compiler(cli);
+        run_compiler(cli)
     }
 }
