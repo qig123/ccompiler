@@ -6,9 +6,14 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-mod lexer;
+use crate::ast::AstNode;
+use crate::ast_printer::PrettyPrinter;
 
-// 在你的文件顶部或一个新模块中添加这个结构体
+mod ast;
+mod ast_printer;
+mod lexer;
+mod parser;
+
 /// RAII Guard: 在其生命周期结束时自动清理指定的文件。
 #[derive(Debug)]
 struct FileJanitor {
@@ -17,7 +22,6 @@ struct FileJanitor {
 }
 
 impl FileJanitor {
-    /// 创建一个新的 Janitor
     fn new(files: Vec<PathBuf>) -> Self {
         FileJanitor {
             files_to_clean: files,
@@ -31,7 +35,6 @@ impl FileJanitor {
     }
 }
 
-/// 这是魔法发生的地方！
 /// 当 FileJanitor 实例离开作用域时，`drop` 方法会被自动调用。
 impl Drop for FileJanitor {
     fn drop(&mut self) {
@@ -74,7 +77,7 @@ struct Cli {
 
     /// 生成汇编文件 (.s) 但不进行汇编或链接
     #[arg(short = 'S', long = "save-assembly")]
-    save_assembly: bool, // 使用更有描述性的字段名
+    save_assembly: bool,
 }
 
 fn main() {
@@ -97,7 +100,6 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     }
     if cli.source_file.extension().unwrap_or_default() != "c" {
         println!(
-            // 改为 println，因为它是一个警告而非致命错误
             "警告: 输入文件 '{}' 可能不是一个C源文件 (.c)",
             cli.source_file.display()
         );
@@ -109,7 +111,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     let preprocessed_path = input_path.with_extension("i");
     let assembly_path = input_path.with_extension("s");
 
-    // --- 2.5. 【核心改动】创建并"武装"我们的清理卫兵 ---
+    // --- 2.5. 创建并"武装"我们的清理卫兵 ---
     // 将所有可能生成的都文件交给 Janitor 管理
     let mut janitor = FileJanitor::new(vec![
         preprocessed_path.clone(),
@@ -117,7 +119,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
         output_exe_path.clone(),
     ]);
 
-    // 【新功能】在开始前，先清理一次上次可能遗留的文件
+    // 在开始前，先清理一次上次可能遗留的文件
     // drop 会立即调用，执行一次性清理
     drop(FileJanitor::new(vec![
         preprocessed_path.clone(),
@@ -141,7 +143,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     }
 
     // 步骤 C: 语法分析
-    parse(&tokens)?; // parse 应该接收 tokens
+    parse(tokens)?; // parse 应该接收 tokens
     if cli.parse {
         println!("--parse: 语法分析完成，程序停止。");
         return Ok(());
@@ -229,25 +231,29 @@ fn assemble_and_link(assembly_file: &Path, output_exe: &Path) -> io::Result<()> 
     Ok(())
 }
 
-// --- 以下是你的编译器核心逻辑的占位符 (Placeholder) ---
-
 // 步骤 B: 词法分析 (占位符)
-// 让它返回 Vec<Token>
 fn lex(input: &Path) -> Result<Vec<lexer::Token>, String> {
     println!("(2) 正在进行词法分析: {}", input.display());
     let lexer = lexer::Lexer::new();
     let content = fs::read_to_string(input).map_err(|e| e.to_string())?;
-    let tokens = lexer.lex(&content)?; // 直接使用 `?`
+    let tokens = lexer.lex(&content)?;
     println!("✅ 词法分析完成，生成 {} 个 token", tokens.len());
-    // 如果需要打印，可以在这里循环
-    // for token in &tokens { println!("{:?}", token); }
+
     Ok(tokens)
 }
 
 /// 步骤 C: 语法分析 (占位符)
-fn parse(tokens: &[lexer::Token]) -> Result<(), String> {
-    println!("(3) 正在进行语法分析 (输入 {} 个 token)", tokens.len());
-    // 在这里实现你的语法分析逻辑
+fn parse(tokens: Vec<lexer::Token>) -> Result<(), String> {
+    println!("\n(3) 正在进行语法分析 (输入 {} 个 token)", tokens.len());
+    let parser = parser::Parser::new(tokens);
+    let program = parser.parse()?;
+
+    println!("✅ 语法分析完成，开始打印 AST：");
+    // 创建并使用 PrettyPrinter
+    println!();
+    let mut printer = PrettyPrinter::new();
+    program.pretty_print(&mut printer);
+    println!();
     Ok(())
 }
 

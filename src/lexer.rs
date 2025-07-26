@@ -129,10 +129,19 @@ impl Lexer {
             _ => TokenType::Identifier,
         };
 
-        Token {
-            lexeme: identifier,
-            type_,
-            value: None,
+        // 根据类型决定如何构造 Token
+        if type_ == TokenType::Identifier {
+            Token {
+                type_,
+                lexeme: identifier.clone(),
+                value: Some(identifier),
+            }
+        } else {
+            Token {
+                type_,
+                lexeme: identifier,
+                value: None,
+            }
         }
     }
 }
