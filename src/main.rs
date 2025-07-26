@@ -6,8 +6,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::backend::ass_ast;
-use crate::backend::ass_gen::AssGen;
+use crate::backend::assembly_ast;
+use crate::backend::assembly_ast_gen::AssemblyGenerator;
 use crate::backend::code_gen::CodeGenerator;
 use crate::frontend::c_ast::AstNode;
 use crate::frontend::c_ast::PrettyPrinter;
@@ -270,10 +270,10 @@ fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
 }
 
 /// 步骤 D: 代码生成 (占位符)
-fn codegen(c_ast: Program) -> Result<ass_ast::Program, String> {
+fn codegen(c_ast: Program) -> Result<assembly_ast::Program, String> {
     //先要生成汇编Ast
-    let mut ass_gen = AssGen::new();
-    let ass_ast = ass_gen.generate_ass_ast(c_ast)?;
+    let mut ass_gen = AssemblyGenerator::new();
+    let ass_ast = ass_gen.generate(&c_ast)?;
     println!("{:?}", ass_ast);
 
     Ok(ass_ast)
