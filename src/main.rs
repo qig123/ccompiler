@@ -6,13 +6,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::ast::AstNode;
-use crate::ast_printer::PrettyPrinter;
+use crate::frontend::c_ast::AstNode;
+use crate::frontend::c_ast::PrettyPrinter;
+use crate::frontend::lexer;
+use crate::frontend::parser;
 
-mod ast;
-mod ast_printer;
-mod lexer;
-mod parser;
+mod frontend;
 
 /// RAII Guard: 在其生命周期结束时自动清理指定的文件。
 #[derive(Debug)]

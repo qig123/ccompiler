@@ -1,5 +1,6 @@
-use crate::ast_printer::PrettyPrinter;
-
+pub trait AstNode {
+    fn pretty_print(&self, printer: &mut PrettyPrinter);
+}
 #[derive(Debug)]
 pub struct Program {
     pub functions: Vec<Function>,
@@ -32,7 +33,6 @@ impl AstNode for Program {
         printer.unindent();
     }
 }
-
 impl AstNode for Function {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         // 构建函数签名的字符串
@@ -57,10 +57,7 @@ impl AstNode for Function {
         printer.unindent();
     }
 }
-/// 一个通用的 trait，所有 AST 节点都应该实现它
-pub trait AstNode {
-    fn pretty_print(&self, printer: &mut PrettyPrinter);
-}
+
 impl AstNode for Statement {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
@@ -81,5 +78,35 @@ impl AstNode for Expression {
                 printer.writeln(&format!("Constant(value: {})", value));
             }
         }
+    }
+}
+
+pub struct PrettyPrinter {
+    pub indent_level: usize,
+}
+
+impl PrettyPrinter {
+    pub fn new() -> Self {
+        PrettyPrinter { indent_level: 0 }
+    }
+
+    /// 增加缩进
+    pub fn indent(&mut self) {
+        self.indent_level += 1;
+    }
+
+    /// 减少缩进
+    pub fn unindent(&mut self) {
+        self.indent_level -= 1;
+    }
+
+    /// 生成当前缩进级别的字符串
+    pub fn prefix(&self) -> String {
+        "  ".repeat(self.indent_level) // 使用两个空格作为一级缩进
+    }
+
+    /// 打印一行带缩进的文本
+    pub fn writeln(&self, text: &str) {
+        println!("{}{}", self.prefix(), text);
     }
 }

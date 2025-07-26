@@ -1,7 +1,8 @@
-use crate::ast::{Expression, Function, Program, Statement};
-use crate::lexer::{Token, TokenType};
 use std::iter::Peekable;
 use std::vec::IntoIter;
+
+use crate::frontend::c_ast::{Expression, Function, Program, Statement};
+use crate::frontend::lexer::{Token, TokenType};
 
 #[derive(Debug)]
 pub struct Parser {
