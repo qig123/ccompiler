@@ -43,7 +43,7 @@ impl AssGen {
                 };
                 ins.push(Instructions::Mov {
                     src: i1,
-                    dst: Operand::Register(),
+                    dst: Operand::Register,
                 });
                 ins.push(Instructions::Ret);
             }

@@ -6,7 +6,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::backend::ass_ast;
 use crate::backend::ass_gen::AssGen;
+use crate::backend::code_gen::CodeGenerator;
 use crate::frontend::c_ast::AstNode;
 use crate::frontend::c_ast::PrettyPrinter;
 use crate::frontend::c_ast::Program;
@@ -84,7 +86,7 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
     let result = run_compiler(cli);
-    eprintln!("\n>>> FINAL COMPILER RESULT: {:?}\n", result);
+    //eprintln!("\n>>> FINAL COMPILER RESULT: {:?}\n", result);
     if let Err(e) = result {
         eprintln!("Error: {}", e);
         std::process::exit(1);
@@ -151,14 +153,23 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     }
 
     // 步骤 D: 代码生成
-    let assembly_code = codegen(&preprocessed_path, ast)?;
+    let assembly_code_ast = codegen(ast)?;
     if cli.codegen {
         println!("--codegen: 汇编代码生成完成，程序停止。");
         return Ok(());
     }
 
-    // 步骤 E: 发射汇编代码
-    fs::write(&assembly_path, assembly_code).map_err(|e| e.to_string())?;
+    // 步骤 E: 发射汇编代码 (Code Emission)
+    println!("\n(4) 正在发射汇编代码: -> {}", assembly_path.display());
+    let code_generator = CodeGenerator::new();
+    code_generator
+        .generate_program_to_file(&assembly_code_ast, &assembly_path.to_string_lossy())?;
+    // 上面这一行调用就完成了所有工作！
+    // 它接收汇编 AST 的引用，以及目标文件路径的引用。
+    // 如果写入失败，`?` 会自动将错误传递出去。
+
+    // (原来的 fs::write 调用就不再需要了)
+    // println! 已经被我们的 CodeGenerator 内部调用了，但在这里再确认一次也很好。
     println!("✅ 汇编代码已生成到: {}", assembly_path.display());
 
     // 步骤 F: 处理 -S 选项
@@ -259,26 +270,13 @@ fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
 }
 
 /// 步骤 D: 代码生成 (占位符)
-fn codegen(input: &Path, c_ast: Program) -> Result<String, String> {
+fn codegen(c_ast: Program) -> Result<ass_ast::Program, String> {
     //先要生成汇编Ast
     let mut ass_gen = AssGen::new();
     let ass_ast = ass_gen.generate_ass_ast(c_ast)?;
     println!("{:?}", ass_ast);
 
-    println!("(4) 正在生成汇编代码: {}", input.display());
-    // 在这里实现你的代码生成逻辑r
-    // 如果成功，返回一个包含完整汇编代码的 String
-    // 如果失败，返回 Err
-    // 使用 `\` 可以让字符串在代码中跨行书写，而不会在最终的字符串中引入换行或多余的空格。
-    let placeholder_asm = format!(
-        "\t.globl main\n\
-         main:\n\
-         \tmovl $0, %eax\n\
-         \tret\n\
-         # Generated from {}\n",
-        input.display()
-    );
-    Ok(placeholder_asm)
+    Ok(ass_ast)
 }
 #[cfg(test)]
 mod tests {
