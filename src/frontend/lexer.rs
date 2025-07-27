@@ -12,6 +12,10 @@ pub enum TokenType {
     LeftBrace,
     RightBrace,
     Semicolon,
+    Negate,     // -
+    Complement, // ~
+    // two-character
+    Decrement, // --
     // End of File
     Eof,
 }
@@ -20,7 +24,6 @@ pub enum TokenType {
 pub struct Token {
     pub lexeme: String,
     pub type_: TokenType,
-    // `value` 字段现在将被用来存储字面量的值
     pub value: Option<String>,
 }
 
@@ -39,13 +42,14 @@ impl Lexer {
 
         while let Some(&c) = chars.peek() {
             match c {
-                '(' | ')' | '{' | '}' | ';' => {
+                '(' | ')' | '{' | '}' | ';' | '~' => {
                     let type_ = match c {
                         '(' => TokenType::LeftParen,
                         ')' => TokenType::RightParen,
                         '{' => TokenType::LeftBrace,
                         '}' => TokenType::RightBrace,
                         ';' => TokenType::Semicolon,
+                        '~' => TokenType::Complement,
                         _ => unreachable!(),
                     };
                     tokens.push(Token {
@@ -54,6 +58,23 @@ impl Lexer {
                         value: None,
                     });
                     chars.next();
+                }
+                '-' => {
+                    chars.next();
+                    if let Some('-') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token {
+                            lexeme: "--".to_string(),
+                            type_: TokenType::Decrement,
+                            value: None,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            lexeme: c.to_string(),
+                            type_: TokenType::Negate,
+                            value: None,
+                        });
+                    }
                 }
                 '0'..='9' => {
                     tokens.push(self.lex_number(&mut chars)?);
@@ -78,7 +99,6 @@ impl Lexer {
 
         Ok(tokens)
     }
-
     fn lex_number(
         &self,
         chars: &mut std::iter::Peekable<std::str::Chars>,

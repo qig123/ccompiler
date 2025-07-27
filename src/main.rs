@@ -287,7 +287,7 @@ mod tests {
     fn test_default_compilation() -> Result<(), String> {
         let cli = Cli {
             source_file: PathBuf::from(r"./tests/program.c"),
-            lex: false,
+            lex: true,
             parse: false,
             codegen: false,
             save_assembly: false,

@@ -83,7 +83,7 @@ impl AssemblyGenerator {
             Expression::Constant(n) => Ok(Operand::Imm(*n)),
             // 当你支持变量或更复杂的表达式时，在这里添加 match 分支。
             // 对于不支持的表达式，返回一个描述性的错误。
-            _ => Err(format!("不支持的表达式类型: {:?}", expr)),
+            // _ => Err(format!("不支持的表达式类型: {:?}", expr)),
         }
     }
 }
