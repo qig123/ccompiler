@@ -24,18 +24,45 @@ pub enum Statement {
 #[derive(Debug)]
 pub enum Expression {
     Constant(i64),
-    Unary { op: UnaryOp, exp: Box<Expression> },
+    Unary {
+        op: UnaryOp,
+        exp: Box<Expression>,
+    },
+    Binary {
+        op: BinaryOp,
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
 }
 #[derive(Debug)]
 pub enum UnaryOp {
     Complement,
     Negate,
 }
+#[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+}
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             UnaryOp::Complement => write!(f, "Complement (~)"),
             UnaryOp::Negate => write!(f, "Negate (-)"),
+        }
+    }
+}
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BinaryOp::Add => write!(f, "+"),
+            BinaryOp::Subtract => write!(f, "-"),
+            BinaryOp::Multiply => write!(f, "*"),
+            BinaryOp::Divide => write!(f, "/"),
+            BinaryOp::Remainder => write!(f, "%"),
         }
     }
 }
@@ -99,6 +126,14 @@ impl AstNode for Expression {
                 printer.writeln(&format!("Unary(op: {})", op)).unwrap();
                 printer.indent();
                 exp.pretty_print(printer);
+                printer.unindent();
+            }
+            Expression::Binary { op, left, right } => {
+                printer.writeln(&format!("Binary({}", op)).unwrap();
+                printer.indent();
+                left.pretty_print(printer);
+                right.pretty_print(printer);
+                printer.writeln(&format!(")")).unwrap();
                 printer.unindent();
             }
         }

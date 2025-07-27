@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use crate::frontend::c_ast::{Expression, Function, Program, Statement, UnaryOp};
+use crate::frontend::c_ast::{BinaryOp, Expression, Function, Program, Statement, UnaryOp};
 use crate::frontend::lexer::{Token, TokenType};
 
 #[derive(Debug)]
@@ -65,13 +65,13 @@ impl Parser {
     /// <statement> ::= "return" <exp> ";"
     fn parse_statement(&mut self) -> Result<Statement, String> {
         self.consume(TokenType::Return)?;
-        let expression = self.parse_expression()?;
+        let expression = self.parse_exp(0)?;
         self.consume(TokenType::Semicolon)?;
         Ok(Statement::Return(expression))
     }
+    //<factor>     ::= <int> | <unop> <factor> | "(" <exp> ")"
 
-    /// <exp> ::= <int> | <unop> <exp> | "(" <exp> ")"
-    fn parse_expression(&mut self) -> Result<Expression, String> {
+    fn parse_factor(&mut self) -> Result<Expression, String> {
         // 使用 peek_type 来决定应用哪条语法规则
         let next_token_type = self.peek_type()?.clone();
         match next_token_type {
@@ -93,7 +93,7 @@ impl Parser {
                     TokenType::Complement => UnaryOp::Complement,
                     _ => unreachable!(),
                 };
-                let right_exp = self.parse_expression()?;
+                let right_exp = self.parse_factor()?;
                 Ok(Expression::Unary {
                     op,
                     exp: Box::new(right_exp),
@@ -103,7 +103,7 @@ impl Parser {
             // 规则 3: "(" <exp> ")"
             TokenType::LeftParen => {
                 self.consume(TokenType::LeftParen)?;
-                let inner_exp = self.parse_expression()?;
+                let inner_exp = self.parse_exp(0)?;
                 self.consume(TokenType::RightParen)?;
                 Ok(inner_exp)
             }
@@ -111,6 +111,56 @@ impl Parser {
                 "Unexpected token {:?}, expected an expression (number, unary operator, or '(').",
                 next_token_type
             )),
+        }
+    }
+    fn parse_exp(&mut self, min_prec: i32) -> Result<Expression, String> {
+        let mut left = self.parse_factor()?;
+        loop {
+            let next_token = match self.tokens.peek().cloned() {
+                Some(tok) => tok,
+                None => break, // 正常结束，没有更多的中缀操作符f
+            };
+
+            // 检查是否是中缀操作符
+            let op = match next_token.type_ {
+                TokenType::Add
+                | TokenType::Mul
+                | TokenType::Div
+                | TokenType::Remainder
+                | TokenType::Negate => next_token,
+                _ => break, // 不是中缀操作符，表达式结束
+            };
+
+            let op_prec = self.get_precedence(op.type_.clone());
+            if op_prec < min_prec {
+                break;
+            }
+            self.tokens.next(); // 消费操作符
+            let right = self.parse_exp(op_prec)?;
+            let binop = match op.type_ {
+                TokenType::Add => BinaryOp::Add,
+                TokenType::Negate => BinaryOp::Subtract,
+                TokenType::Mul => BinaryOp::Multiply,
+                TokenType::Div => BinaryOp::Divide,
+                TokenType::Remainder => BinaryOp::Remainder,
+                _ => unreachable!(),
+            };
+            left = Expression::Binary {
+                op: binop,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+    fn get_precedence(&self, typ: TokenType) -> i32 {
+        match typ {
+            TokenType::Mul | TokenType::Div | TokenType::Remainder => 50,
+            TokenType::Add | TokenType::Negate => 45,
+            _ => {
+                unreachable!()
+            }
         }
     }
 

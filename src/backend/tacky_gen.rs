@@ -85,6 +85,9 @@ impl TackyGenerator {
                 });
                 Ok((instructions, dst_value))
             }
+            _ => {
+                panic!()
+            }
         }
     }
 }

@@ -37,8 +37,7 @@ impl<'a> PrettyPrinter<'a> {
         writeln!(self.writer, "{}{}", self.prefix(), text)
     }
 
-    #[allow(dead_code)]
-    pub fn write_raw(&mut self, text: &str) -> io::Result<()> {
-        write!(self.writer, "{}", text)
-    }
+    // pub fn write_raw(&mut self, text: &str) -> io::Result<()> {
+    //     write!(self.writer, "{}", text)
+    // }
 }
