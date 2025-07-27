@@ -18,6 +18,7 @@ use crate::frontend::parser;
 mod backend;
 mod common;
 mod frontend;
+
 /// RAII Guard: 在其生命周期结束时自动清理指定的文件。
 #[derive(Debug)]
 struct FileJanitor {
@@ -33,7 +34,6 @@ impl FileJanitor {
     }
 
     /// "解除" 对某个文件的清理责任。
-    /// 当我们希望在成功时保留某个文件（如最终的可执行文件或 .s 文件）时调用。
     fn keep(&mut self, path_to_keep: &Path) {
         self.files_to_clean.retain(|p| p != path_to_keep);
     }
@@ -45,15 +45,18 @@ impl Drop for FileJanitor {
         if self.files_to_clean.is_empty() {
             return;
         }
-        println!("--- 自动清理 ---");
+        // println!("--- 自动清理 ---"); //
+        let mut cleaned_any = false;
         for file in &self.files_to_clean {
             if file.exists() {
-                // 我们在这里忽略 remove_file 可能的错误，因为清理失败不应使整个程序崩溃。
-                // 在更复杂的应用中，你可能会记录这个错误。
+                if !cleaned_any {
+                    println!("--- 自动清理 ---");
+                    cleaned_any = true;
+                }
                 if let Err(e) = fs::remove_file(file) {
-                    eprintln!("警告: 清理临时文件 {} 失败: {}", file.display(), e);
+                    eprintln!("   警告: 清理临时文件 {} 失败: {}", file.display(), e);
                 } else {
-                    println!("   已清理: {}", file.display());
+                    println!("   ✅ 已清理: {}", file.display());
                 }
             }
         }
@@ -74,9 +77,11 @@ struct Cli {
     /// 运行词法分析器和语法分析器，然后停止
     #[arg(long)]
     parse: bool,
-    //生成ir
+
+    // 生成ir
     #[arg(long)]
     tacky: bool,
+
     /// 运行到汇编代码生成，然后停止
     #[arg(long)]
     codegen: bool,
@@ -88,10 +93,9 @@ struct Cli {
 
 fn main() {
     let cli = Cli::parse();
-    let result = run_compiler(cli);
-    //eprintln!("\n>>> FINAL COMPILER RESULT: {:?}\n", result);
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
+    if let Err(e) = run_compiler(cli) {
+        // 在 main 函数中统一处理最终的错误打印
+        eprintln!("\n❌ 编译失败: {}", e);
         std::process::exit(1);
     }
 }
@@ -99,14 +103,11 @@ fn main() {
 fn run_compiler(cli: Cli) -> Result<(), String> {
     // --- 1. 路径和文件校验 ---
     if !cli.source_file.exists() {
-        return Err(format!(
-            "错误: 输入文件不存在: {}",
-            cli.source_file.display()
-        ));
+        return Err(format!("输入文件不存在: {}", cli.source_file.display()));
     }
     if cli.source_file.extension().unwrap_or_default() != "c" {
         println!(
-            "警告: 输入文件 '{}' 可能不是一个C源文件 (.c)",
+            "   警告: 输入文件 '{}' 可能不是一个C源文件 (.c)",
             cli.source_file.display()
         );
     }
@@ -117,8 +118,6 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     let preprocessed_path = input_path.with_extension("i");
     let assembly_path = input_path.with_extension("s");
 
-    // --- 2.5. 创建并"武装"我们的清理卫兵 ---
-    // 将所有可能生成的都文件交给 Janitor 管理
     let mut janitor = FileJanitor::new(vec![
         preprocessed_path.clone(),
         assembly_path.clone(),
@@ -126,174 +125,172 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     ]);
 
     // 在开始前，先清理一次上次可能遗留的文件
-    // drop 会立即调用，执行一次性清理
     drop(FileJanitor::new(vec![
         preprocessed_path.clone(),
         assembly_path.clone(),
         output_exe_path.clone(),
     ]));
 
+    println!("\n--- 开始编译: {} ---", input_path.display());
+
     // --- 3. 编译流程 (Pipeline) ---
-    // 任何下面的 `?` 失败，都会导致 run_compiler 退出，
-    // `janitor` 会被 drop，从而自动清理所有文件。
 
-    // 步骤 A: 预处理
-    preprocess(input_path, &preprocessed_path).map_err(|e| e.to_string())?;
-
-    // 步骤 B: 词法分析
-    let tokens = lex(&preprocessed_path)?;
+    // 步骤 A -> (1)
+    let tokens = preprocess_and_lex(input_path, &preprocessed_path)?;
     if cli.lex {
-        println!("--lex: 词法分析完成，程序停止。");
-        // 当函数在这里返回时，janitor 会自动清理 .i 文件
+        println!("\n--lex: 词法分析完成，程序停止。");
         return Ok(());
     }
 
-    // 步骤 C: 语法分析
-    let ast = parse(tokens)?; // parse 应该接收 tokens
+    // 步骤 B -> (2)
+    let ast = parse(tokens)?;
     if cli.parse {
-        println!("--parse: 语法分析完成，程序停止。");
+        println!("\n--parse: 语法分析完成，程序停止。");
         return Ok(());
     }
-    //步骤d
+
+    // 步骤 C -> (3)
     let ir_ast = gen_ir(&ast)?;
     if cli.tacky {
-        println!("--tacky: ir完成，程序停止。");
+        println!("\n--tacky: IR 生成完成, 程序停止。");
         return Ok(());
     }
 
-    // 步骤 D: 代码生成
+    // 步骤 D -> (4)
     let assembly_code_ast = codegen(ir_ast)?;
     if cli.codegen {
-        println!("--codegen: 汇编Ast生成完成，程序停止。");
+        println!("\n--codegen: 汇编 AST 生成完成, 程序停止。");
         return Ok(());
     }
 
-    // 步骤 E: 发射汇编代码 (Code Emission)
-    println!("\n(4) 正在发射汇编代码: -> {}", assembly_path.display());
-    let code_generator = CodeGenerator::new();
-    code_generator
-        .generate_program_to_file(&assembly_code_ast, &assembly_path.to_string_lossy())?;
-
-    println!("✅ 汇编代码已生成到: {}", assembly_path.display());
-
-    // 步骤 F: 处理 -S 选项
+    // 步骤 E -> (5)
+    emit_assembly(&assembly_code_ast, &assembly_path)?;
     if cli.save_assembly {
-        // 我们想保留 .s 文件，所以告诉 janitor 不要清理它
         janitor.keep(&assembly_path);
-        println!("-S: 保留汇编文件，不进行链接。");
-        // janitor 在这里 drop，会清理 .i 文件，但保留 .s 文件
+        println!("\n-S: 保留汇编文件，不进行链接。编译成功！");
         return Ok(());
     }
 
-    // 步骤 G: 汇编与链接
-    assemble_and_link(&assembly_path, &output_exe_path).map_err(|e| e.to_string())?;
+    // 步骤 F -> (6)
+    assemble_and_link(&assembly_path, &output_exe_path)?;
+    janitor.keep(&output_exe_path); // 成功后，解除对可执行文件的清理
 
-    // --- 4. 【核心改动】成功完成，"解除"对最终文件的清理 ---
-    // 如果程序运行到这里，说明一切顺利。我们想保留可执行文件。
-    janitor.keep(&output_exe_path);
-    println!("✅ 编译成功！可执行文件在: {}", output_exe_path.display());
+    // 步骤 G -> (7)
+    run_and_report_exit_code(&output_exe_path)?;
 
-    // 当函数在这里正常结束时，janitor 会被 drop。
-    // 由于我们调用了 janitor.keep(&output_exe_path)，
-    // 它只会清理 .i 和 .s 文件，而保留最终的可执行文件。
+    println!("\n✅ 编译并运行成功！");
+
     Ok(())
 }
 
-/// 步骤 A: 调用 gcc 进行预处理
-fn preprocess(input: &Path, output: &Path) -> io::Result<()> {
+// --- 分解后的编译阶段函数 ---
+
+fn preprocess_and_lex(
+    input: &Path,
+    preprocessed_output: &Path,
+) -> Result<Vec<lexer::Token>, String> {
+    // (1) 预处理
     println!(
         "(1) 正在预处理: {} -> {}",
         input.display(),
-        output.display()
+        preprocessed_output.display()
     );
     let status = Command::new("gcc")
-        .arg("-E")
-        .arg("-P")
+        .args(["-E", "-P"])
         .arg(input)
-        .arg("-o")
-        .arg(output)
-        .status()?;
+        .args(["-o", preprocessed_output.to_str().unwrap()]) // 使用 to_str
+        .status()
+        .map_err(|e| format!("无法执行 gcc: {}", e))?;
 
     if !status.success() {
-        eprintln!("❌ gcc 预处理失败");
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "GCC preprocessing failed",
-        ));
+        return Err("gcc 预处理失败".to_string());
     }
-    Ok(())
-}
+    println!("   ✅ 预处理成功。");
 
-/// 步骤 G: 调用 gcc 进行汇编和链接
-fn assemble_and_link(assembly_file: &Path, output_exe: &Path) -> io::Result<()> {
-    println!(
-        "(5) 正在汇编和链接: {} -> {}",
-        assembly_file.display(),
-        output_exe.display()
-    );
-    let status = Command::new("gcc")
-        .arg(assembly_file)
-        .arg("-o")
-        .arg(output_exe)
-        .status()?;
-
-    if !status.success() {
-        eprintln!("❌ gcc 汇编或链接失败");
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "GCC assembly/linking failed",
-        ));
-    }
-    Ok(())
-}
-
-// 步骤 B: 词法分析 (占位符)
-fn lex(input: &Path) -> Result<Vec<lexer::Token>, String> {
-    println!("(2) 正在进行词法分析: {}", input.display());
+    // (2) 词法分析
+    println!("(2) 正在进行词法分析: {}", preprocessed_output.display());
     let lexer = lexer::Lexer::new();
-    let content = fs::read_to_string(input).map_err(|e| e.to_string())?;
+    let content = fs::read_to_string(preprocessed_output).map_err(|e| e.to_string())?;
     let tokens = lexer.lex(&content)?;
-    println!("✅ 词法分析完成，生成 {} 个 token", tokens.len());
-
+    println!("   ✅ 词法分析完成，生成 {} 个 token。", tokens.len());
     Ok(tokens)
 }
 
-/// 步骤 C: 语法分析 (占位符)
 fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
-    println!("\n(3) 正在进行语法分析 (输入 {} 个 token)", tokens.len());
+    println!("(3) 正在进行语法分析 (输入 {} 个 token)...", tokens.len());
     let parser = parser::Parser::new(tokens);
     let program = parser.parse()?;
-
-    println!("✅ 语法分析完成，开始打印 AST：");
-    println!();
+    println!("   ✅ 语法分析完成。打印 AST:");
     let mut stdout = io::stdout();
     let mut printer = PrettyPrinter::new(&mut stdout);
     program.pretty_print(&mut printer);
-    println!();
     Ok(program)
 }
-fn gen_ir(
-    c_ast: &crate::frontend::c_ast::Program,
-) -> Result<crate::backend::tacky_ir::Program, String> {
-    println!("\n(3) 正在进行ir生成 ");
+
+fn gen_ir(c_ast: &Program) -> Result<crate::backend::tacky_ir::Program, String> {
+    println!("(4) 正在生成 Tacky IR...");
     let mut ir_gen = backend::tacky_gen::TackyGenerator::new();
     let ir_ast = ir_gen.generate_tacky(c_ast)?;
-    println!("✅ ir已经生成，开始打印 ：");
+    println!("   ✅ IR 生成完成。打印 Tacky IR:");
     let mut stdout = io::stdout();
     let mut printer = PrettyPrinter::new(&mut stdout);
     ir_ast.pretty_print(&mut printer);
     Ok(ir_ast)
 }
 
-/// 步骤 D: 代码生成 (占位符)
 fn codegen(ir_ast: crate::backend::tacky_ir::Program) -> Result<assembly_ast::Program, String> {
+    println!("(5) 正在生成汇编 AST...");
     let mut ass_gen = AssemblyGenerator::new();
     let ass_ast = ass_gen.generate(ir_ast)?;
+    println!("   ✅ 汇编 AST 生成完成。打印汇编 AST:");
     let mut stdout = io::stdout();
     let mut printer = PrettyPrinter::new(&mut stdout);
     ass_ast.pretty_print(&mut printer);
     Ok(ass_ast)
 }
+
+fn emit_assembly(asm_ast: &assembly_ast::Program, output_path: &Path) -> Result<(), String> {
+    println!("(6) 正在发射汇编代码 -> {}", output_path.display());
+    let code_generator = CodeGenerator::new();
+    code_generator.generate_program_to_file(asm_ast, &output_path.to_string_lossy())?;
+    println!("   ✅ 汇编代码已生成。");
+    Ok(())
+}
+
+fn assemble_and_link(assembly_file: &Path, output_exe: &Path) -> Result<(), String> {
+    println!(
+        "(7) 正在汇编和链接: {} -> {}",
+        assembly_file.display(),
+        output_exe.display()
+    );
+    let status = Command::new("gcc")
+        .arg(assembly_file)
+        .args(["-o", output_exe.to_str().unwrap()])
+        .status()
+        .map_err(|e| format!("无法执行 gcc: {}", e))?;
+
+    if !status.success() {
+        return Err("gcc 汇编或链接失败".to_string());
+    }
+    println!("   ✅ 汇编与链接成功。");
+    Ok(())
+}
+
+fn run_and_report_exit_code(executable: &Path) -> Result<(), String> {
+    println!("(8) 正在运行生成的可执行文件: {}", executable.display());
+    let status = Command::new(executable)
+        .status()
+        .map_err(|e| format!("无法运行生成的文件 '{}': {}", executable.display(), e))?;
+
+    match status.code() {
+        Some(code) => {
+            println!("   ✅ 程序执行完毕，返回值为: {}", code);
+            Ok(())
+        }
+        None => Err("程序被信号终止，没有返回码。".to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,7 +304,7 @@ mod tests {
             parse: false,
             tacky: false,
             codegen: false,
-            save_assembly: true,
+            save_assembly: false,
         };
         run_compiler(cli)
     }

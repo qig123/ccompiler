@@ -1,6 +1,6 @@
 // backend/code_gen.rs
 
-use crate::backend::assembly_ast::Program;
+use crate::backend::assembly_ast::{Function, Instruction, Operand, Program, Reg, UnaryOp};
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 
@@ -22,36 +22,95 @@ impl CodeGenerator {
             .map_err(|e| e.to_string())
     }
 
-    // 这个函数现在是核心，它使用 Display trait 来生成代码
     fn emit_program(&self, program: &Program, writer: &mut impl Write) -> io::Result<()> {
         for function in &program.functions {
-            // --- 函数序言 ---
-            writeln!(writer, "    .globl {}", function.name)?;
-            writeln!(writer, "{}:", function.name)?;
-            writeln!(writer, "    pushq %rbp")?;
-            writeln!(writer, "    movq %rsp, %rbp")?;
-
-            // --- 函数体 ---
-            for instruction in &function.instructions {
-                // 直接打印 instruction！它会自动调用 Display::fmt
-                // 我们添加缩进
-                writeln!(writer, "    {}", instruction)?;
-            }
-
-            // --- 函数结尾 ---
-            // 注意：结尾逻辑现在从 Instruction::Ret 的打印中分离出来了，
-            // 因为它属于函数结构，而不是 ret 指令本身。
-            writeln!(writer, "    movq %rbp, %rsp")?;
-            writeln!(writer, "    popq %rbp")?;
-            writeln!(writer, "    ret")?;
-
+            self.emit_function(function, writer)?;
             writeln!(writer)?; // 函数间空行
         }
-
         writeln!(writer, ".section .note.GNU-stack,\"\",@progbits")?;
         Ok(())
     }
-}
 
-// **注意**: `emit_function`, `emit_instruction`, `format_operand`, `format_reg`
-// 这些函数全都被删除了！它们的逻辑被 `Display` trait 的实现和新的 `emit_program` 吸收了。
+    fn emit_function(&self, function: &Function, writer: &mut impl Write) -> io::Result<()> {
+        // --- 函数元信息 ---
+        writeln!(writer, "    .globl {}", function.name)?;
+        writeln!(writer, "{}:", function.name)?;
+
+        // --- 函数序言 ---
+        self.emit_indented("pushq %rbp", writer)?;
+        self.emit_indented("movq %rsp, %rbp", writer)?;
+
+        // --- 函数体 ---
+        for instruction in &function.instructions {
+            self.emit_instruction(instruction, writer)?;
+        }
+
+        Ok(())
+    }
+
+    fn emit_instruction(
+        &self,
+        instruction: &Instruction,
+        writer: &mut impl Write,
+    ) -> io::Result<()> {
+        match instruction {
+            // 对于其他所有指令，我们都希望有缩进
+            Instruction::Mov { src, dst } => {
+                let line = format!(
+                    "movl {}, {}",
+                    self.format_operand(src),
+                    self.format_operand(dst)
+                );
+                self.emit_indented(&line, writer)?;
+            }
+            Instruction::Unary { op, operand } => {
+                let op_str = match op {
+                    UnaryOp::Neg => "negl",
+                    UnaryOp::Not => "notl",
+                };
+                let line = format!("{} {}", op_str, self.format_operand(operand));
+                self.emit_indented(&line, writer)?;
+            }
+            Instruction::AllocateStack(size) => {
+                self.emit_indented(&format!("subq ${}, %rsp", size), writer)?;
+            }
+
+            Instruction::Ret => {
+                self.emit_indented("movq %rbp, %rsp", writer)?;
+                self.emit_indented("popq %rbp", writer)?;
+                self.emit_indented("ret", writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    // --- 辅助函数 ---
+
+    /// 统一处理带缩进的写入
+    fn emit_indented(&self, line: &str, writer: &mut impl Write) -> io::Result<()> {
+        writeln!(writer, "    {}", line)
+    }
+
+    /// 格式化操作数
+    fn format_operand(&self, operand: &Operand) -> String {
+        match operand {
+            Operand::Imm(val) => format!("${}", val),
+            Operand::Register(reg) => self.format_reg(reg),
+            Operand::Stack(offset) => format!("{}(%rbp)", offset),
+            Operand::Pseudo(_) => {
+                // 在代码生成阶段，不应该再有伪寄存器
+                // 如果出现，说明之前的编译趟有 bug
+                panic!("伪寄存器不应出现在最终代码生成阶段");
+            }
+        }
+    }
+
+    /// 格式化寄存器
+    fn format_reg(&self, reg: &Reg) -> String {
+        match reg {
+            Reg::AX => "%eax".to_string(),
+            Reg::R10 => "%r10d".to_string(),
+            // 如果未来添加了 RSP, RBP, 需要在这里处理
+        }
+    }
+}
