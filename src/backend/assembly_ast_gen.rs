@@ -1,7 +1,7 @@
 // backend/ass_gen.rs
 
 // [注意] 你的 use 语句中可能是 ass_ast，我这里按照之前的讨论改为 assembly_ast
-use crate::backend::assembly_ast::{Function, Instructions, Operand, Program};
+use crate::backend::assembly_ast::{Function, Instruction, Operand, Program};
 use crate::frontend::c_ast::{
     Expression, Function as C_Function, Program as C_Program, Statement as C_Statement,
 };
@@ -36,7 +36,7 @@ impl AssemblyGenerator {
     /// 从 C 函数 AST 生成汇编函数 AST。
     fn generate_function(&mut self, c_func: &C_Function) -> Result<Function, String> {
         // 1. 初始化一个空的指令列表，用于收集该函数的所有汇编指令
-        let mut instructions: Vec<Instructions> = Vec::new();
+        let mut instructions: Vec<Instruction> = Vec::new();
 
         // 2. 遍历 C 函数体中的每一条语句
         for statement in &c_func.body {
@@ -55,7 +55,7 @@ impl AssemblyGenerator {
     }
 
     /// 从单个 C 语句生成一个或多个汇编指令。
-    fn generate_statement(&mut self, statement: &C_Statement) -> Result<Vec<Instructions>, String> {
+    fn generate_statement(&mut self, statement: &C_Statement) -> Result<Vec<Instruction>, String> {
         match statement {
             C_Statement::Return(expr) => {
                 // 1. 先为表达式生成对应的操作数
@@ -63,11 +63,11 @@ impl AssemblyGenerator {
 
                 // 2. 构造指令序列
                 let instructions = vec![
-                    Instructions::Mov {
+                    Instruction::Mov {
                         src: return_value_operand,
                         dst: Operand::Register, // ABI 规定返回值放在 %eax/%rax
                     },
-                    Instructions::Ret,
+                    Instruction::Ret,
                 ];
                 Ok(instructions)
             } // 当你支持更多语句时，在这里添加 match 分支

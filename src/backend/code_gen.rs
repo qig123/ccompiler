@@ -1,6 +1,6 @@
 // backend/code_gen.rs
 
-use crate::backend::assembly_ast::{Function, Instructions, Operand, Program};
+use crate::backend::assembly_ast::{Function, Instruction, Operand, Program};
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 
@@ -49,11 +49,11 @@ impl CodeGenerator {
 
     fn emit_instruction(
         &self,
-        instruction: &Instructions,
+        instruction: &Instruction,
         writer: &mut impl Write,
     ) -> io::Result<()> {
         match instruction {
-            Instructions::Mov { src, dst } => {
+            Instruction::Mov { src, dst } => {
                 writeln!(
                     writer,
                     "    movl {}, {}",
@@ -61,7 +61,7 @@ impl CodeGenerator {
                     self.format_operand(dst)
                 )?;
             }
-            Instructions::Ret => {
+            Instruction::Ret => {
                 writeln!(writer, "    ret")?;
             }
         };

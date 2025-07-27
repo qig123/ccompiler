@@ -9,13 +9,14 @@ use std::process::Command;
 use crate::backend::assembly_ast;
 use crate::backend::assembly_ast_gen::AssemblyGenerator;
 use crate::backend::code_gen::CodeGenerator;
+use crate::common::PrettyPrinter;
 use crate::frontend::c_ast::AstNode;
-use crate::frontend::c_ast::PrettyPrinter;
 use crate::frontend::c_ast::Program;
 use crate::frontend::lexer;
 use crate::frontend::parser;
 
 mod backend;
+mod common;
 mod frontend;
 /// RAII Guard: 在其生命周期结束时自动清理指定的文件。
 #[derive(Debug)]
