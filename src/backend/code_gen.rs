@@ -1,6 +1,6 @@
 // backend/code_gen.rs
 
-use crate::backend::assembly_ast::{Function, Instruction, Operand, Program};
+use crate::backend::assembly_ast::{Function, Instruction, Operand, Program, Reg, UnaryOp};
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 
@@ -30,7 +30,7 @@ impl CodeGenerator {
     fn emit_program(&self, program: &Program, writer: &mut impl Write) -> io::Result<()> {
         for function in &program.functions {
             self.emit_function(function, writer)?;
-            writeln!(writer)?; // 函数间空一行
+            writeln!(writer)?;
         }
         writeln!(writer, ".section .note.GNU-stack,\"\",@progbits")?;
         Ok(())
@@ -40,6 +40,9 @@ impl CodeGenerator {
         let function_name = &function.name;
         writeln!(writer, ".globl {}", function_name)?;
         writeln!(writer, "{}:", function_name)?;
+        //pushq %rbp  movq {@}%rsp, %rbp
+        writeln!(writer, "    pushq %rbp",)?;
+        writeln!(writer, "    movq %rsp, %rbp",)?;
 
         for instruction in &function.instructions {
             self.emit_instruction(instruction, writer)?;
@@ -62,10 +65,23 @@ impl CodeGenerator {
                 )?;
             }
             Instruction::Ret => {
+                writeln!(writer, "    movq %rbp, %rsp",)?;
+                writeln!(writer, "    popq %rbp",)?;
                 writeln!(writer, "    ret")?;
             }
-            _ => {
-                panic!()
+            Instruction::AllocateStack(i) => {
+                writeln!(writer, "    subq ${}, %rsp", i)?;
+            }
+            Instruction::Unary { op, operand } => {
+                let ass_op = match op {
+                    UnaryOp::Neg => "negl",
+                    UnaryOp::Not => "notl",
+                };
+                writeln!(
+                    writer,
+                    "{}",
+                    format!("    {}  {}", ass_op, self.format_operand(operand))
+                )?;
             }
         };
         Ok(())
@@ -74,10 +90,17 @@ impl CodeGenerator {
     fn format_operand(&self, operand: &Operand) -> String {
         match operand {
             Operand::Imm(val) => format!("${}", val),
-            Operand::Register(_r) => "%eax".to_string(),
+            Operand::Register(r) => self.format_reg(r),
+            Operand::Stack(i) => format!("{}(%rbp)", i),
             _ => {
-                panic!()
+                unreachable!()
             }
+        }
+    }
+    fn format_reg(&self, r: &Reg) -> String {
+        match r {
+            Reg::AX => "%eax".to_string(),
+            Reg::R10 => "%r10d".to_string(),
         }
     }
 }

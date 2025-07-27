@@ -304,8 +304,8 @@ mod tests {
             lex: false,
             parse: false,
             tacky: false,
-            codegen: true,
-            save_assembly: false,
+            codegen: false,
+            save_assembly: true,
         };
         run_compiler(cli)
     }
