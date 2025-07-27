@@ -14,6 +14,10 @@ pub enum TokenType {
     Semicolon,
     Negate,     // -
     Complement, // ~
+    Add,        //+
+    Mul,        // *
+    Div,
+    Remainder, // %
     // two-character
     Decrement, // --
     // End of File
@@ -42,7 +46,7 @@ impl Lexer {
 
         while let Some(&c) = chars.peek() {
             match c {
-                '(' | ')' | '{' | '}' | ';' | '~' => {
+                '(' | ')' | '{' | '}' | ';' | '~' | '+' | '*' | '/' | '%' => {
                     let type_ = match c {
                         '(' => TokenType::LeftParen,
                         ')' => TokenType::RightParen,
@@ -50,6 +54,10 @@ impl Lexer {
                         '}' => TokenType::RightBrace,
                         ';' => TokenType::Semicolon,
                         '~' => TokenType::Complement,
+                        '+' => TokenType::Add,
+                        '*' => TokenType::Mul,
+                        '/' => TokenType::Div,
+                        '%' => TokenType::Remainder,
                         _ => unreachable!(),
                     };
                     tokens.push(Token {

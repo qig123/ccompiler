@@ -1,1 +1,1 @@
-int main(void) { return 100; }
+int main(void) { return 1 + 2 / 2 * 3 + 6 % 2; }
