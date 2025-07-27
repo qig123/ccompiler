@@ -15,7 +15,17 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub enum Instruction {
     Return(Value),
-    Unary { op: UnaryOp, src: Value, dst: Value },
+    Unary {
+        op: UnaryOp,
+        src: Value,
+        dst: Value,
+    },
+    Binary {
+        op: BinaryOp,
+        src1: Value,
+        src2: Value,
+        dst: Value,
+    },
 }
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -26,6 +36,14 @@ pub enum Value {
 pub enum UnaryOp {
     Complement,
     Negate,
+}
+#[derive(Debug, Clone)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
 }
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -41,6 +59,17 @@ impl fmt::Display for UnaryOp {
         match self {
             UnaryOp::Complement => write!(f, "COMPLEMENT"),
             UnaryOp::Negate => write!(f, "NEG"),
+        }
+    }
+}
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BinaryOp::Add => write!(f, "Add"),
+            BinaryOp::Subtract => write!(f, "Subtract"),
+            BinaryOp::Multiply => write!(f, "Multiply"),
+            BinaryOp::Divide => write!(f, "Divide"),
+            BinaryOp::Remainder => write!(f, "Remainder"),
         }
     }
 }
@@ -78,11 +107,15 @@ impl AstNode for Instruction {
             Instruction::Unary { op, src, dst } => {
                 format!("{} = {} {}", dst, op, src)
             }
+            Instruction::Binary {
+                op,
+                src1,
+                src2,
+                dst,
+            } => {
+                format!("{} = {} {} {}", dst, op, src1, src2)
+            }
         };
         printer.writeln(&line).unwrap();
     }
 }
-
-// 注意：我们不需要为 Value 和 UnaryOp 实现 AstNode，
-// 因为它们不是独立的树节点，而是作为指令的一部分被打印。
-// 为它们实现 Display trait 是更合适的选择。

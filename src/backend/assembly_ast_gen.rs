@@ -91,6 +91,9 @@ impl AssemblyGenerator {
                 ];
                 ins.extend(instructions);
             }
+            _ => {
+                panic!()
+            }
         }
 
         Ok(ins)

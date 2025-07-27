@@ -85,8 +85,26 @@ impl TackyGenerator {
                 });
                 Ok((instructions, dst_value))
             }
-            _ => {
-                panic!()
+            c_ast::Expression::Binary { op, left, right } => {
+                let (mut instructions1, src1_value) = self.generate_tacky_exp(left)?;
+                let (instructions2, src2_value) = self.generate_tacky_exp(right)?;
+                let dst_var_name = self.name_gen.new_temp_var();
+                let dst_value = Value::Var(dst_var_name);
+                let tacky_op = match op {
+                    c_ast::BinaryOp::Add => BinaryOp::Add,
+                    c_ast::BinaryOp::Subtract => BinaryOp::Subtract,
+                    c_ast::BinaryOp::Multiply => BinaryOp::Multiply,
+                    c_ast::BinaryOp::Divide => BinaryOp::Divide,
+                    c_ast::BinaryOp::Remainder => BinaryOp::Remainder,
+                };
+                instructions1.extend(instructions2);
+                instructions1.push(Instruction::Binary {
+                    op: tacky_op,
+                    src1: src1_value,
+                    src2: src2_value,
+                    dst: dst_value.clone(),
+                });
+                Ok((instructions1, dst_value))
             }
         }
     }
