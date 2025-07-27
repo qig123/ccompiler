@@ -1,27 +1,41 @@
 use crate::common::{AstNode, PrettyPrinter};
 
 // src/backend/assembly_ast.rs
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Program {
     pub functions: Vec<Function>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
     pub instructions: Vec<Instruction>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     Mov { src: Operand, dst: Operand },
+    Unary { op: UnaryOp, operand: Operand },
+    AllocateStack(i64),
     Ret,
+}
+#[derive(Debug, Clone)]
+pub enum UnaryOp {
+    Not, //按位取反
+    Neg,
 }
 
 #[derive(Debug, Clone)]
 pub enum Operand {
     Imm(i64),
-    Register,
+    Register(Reg),
+    Pseudo(String),
+    Stack(i64),
+}
+#[derive(Debug, Clone)]
+pub enum Reg {
+    AX,
+    R10,
 }
 impl AstNode for Program {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
@@ -49,27 +63,26 @@ impl AstNode for Instruction {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
             Instruction::Mov { src, dst } => {
-                // 对于指令，我们不想增加缩进，而是直接打印
                 printer.writeln(&format!("mov {}, {}", src.to_string(), dst.to_string()));
             }
             Instruction::Ret => {
                 printer.writeln("ret");
             }
+            _ => {
+                panic!()
+            }
         }
     }
 }
 
-// 为 Operand 实现 Display trait 会让打印更方便
-// 或者直接写一个 to_string 方法
 impl ToString for Operand {
     fn to_string(&self) -> String {
         match self {
             Operand::Imm(val) => format!("${}", val),
-            Operand::Register => "%eax".to_string(),
+            Operand::Register(_r) => "%eax".to_string(),
+            _ => {
+                panic!()
+            }
         }
     }
 }
-
-// 注意：我们不需要为 Operand 实现 AstNode，因为它不是一个独立的树节点，
-// 而是指令的一部分。直接在指令的打印逻辑中处理它更简单。
-// 如果你想，当然也可以为它实现 AstNode。

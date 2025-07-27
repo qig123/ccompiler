@@ -155,14 +155,14 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
         return Ok(());
     }
     //步骤d
-    let _ir_ast = gen_ir(&ast);
+    let ir_ast = gen_ir(&ast)?;
     if cli.tacky {
         println!("--tacky: ir完成，程序停止。");
         return Ok(());
     }
 
     // 步骤 D: 代码生成
-    let assembly_code_ast = codegen(ast)?;
+    let assembly_code_ast = codegen(ir_ast)?;
     if cli.codegen {
         println!("--codegen: 汇编代码生成完成，程序停止。");
         return Ok(());
@@ -290,12 +290,10 @@ fn gen_ir(
 }
 
 /// 步骤 D: 代码生成 (占位符)
-fn codegen(c_ast: Program) -> Result<assembly_ast::Program, String> {
-    //先要生成汇编Ast
+fn codegen(ir_ast: crate::backend::tacky_ir::Program) -> Result<assembly_ast::Program, String> {
     let mut ass_gen = AssemblyGenerator::new();
-    let ass_ast = ass_gen.generate(&c_ast)?;
+    let ass_ast = ass_gen.generate(ir_ast)?;
     println!("{:?}", ass_ast);
-
     Ok(ass_ast)
 }
 #[cfg(test)]
@@ -309,8 +307,8 @@ mod tests {
             source_file: PathBuf::from(r"./tests/program.c"),
             lex: false,
             parse: false,
-            tacky: true,
-            codegen: false,
+            tacky: false,
+            codegen: true,
             save_assembly: false,
         };
         run_compiler(cli)

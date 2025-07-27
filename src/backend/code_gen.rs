@@ -64,6 +64,9 @@ impl CodeGenerator {
             Instruction::Ret => {
                 writeln!(writer, "    ret")?;
             }
+            _ => {
+                panic!()
+            }
         };
         Ok(())
     }
@@ -71,7 +74,10 @@ impl CodeGenerator {
     fn format_operand(&self, operand: &Operand) -> String {
         match operand {
             Operand::Imm(val) => format!("${}", val),
-            Operand::Register => "%eax".to_string(),
+            Operand::Register(_r) => "%eax".to_string(),
+            _ => {
+                panic!()
+            }
         }
     }
 }
