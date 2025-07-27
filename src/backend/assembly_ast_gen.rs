@@ -12,41 +12,45 @@ impl AssemblyGenerator {
         AssemblyGenerator {}
     }
 
-    /// 主入口：生成整个程序的汇编 AST。
-    pub fn generate(&mut self, c_program: tacky_ir::Program) -> Result<Program, String> {
-        let mut functions: Vec<Function> = Vec::new();
-
-        for ir_func in &c_program.functions {
-            let mut assembly_function = self.generate_function(ir_func)?;
-            //pass 2 指令替换
-            let alloct = self.replace_fake_register(&mut assembly_function.instructions)?;
-            assembly_function
-                .instructions
-                .insert(0, Instruction::AllocateStack(alloct));
-            //pass 3指令修复
-            let new_ins = self.fix_instruction(&assembly_function.instructions)?;
-            let new_func = Function {
-                name: assembly_function.name,
-                instructions: new_ins,
-            };
-            functions.push(new_func);
-        }
+    pub fn generate(&mut self, ir_program: tacky_ir::Program) -> Result<Program, String> {
+        let functions = ir_program
+            .functions
+            .iter()
+            .map(|ir_func| self.process_function(ir_func))
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Program { functions })
     }
+    fn process_function(&mut self, ir_func: &tacky_ir::Function) -> Result<Function, String> {
+        // Pass 1: IR -> 初始汇编指令
+        let initial_instructions = self.generate_initial_instructions(ir_func)?;
 
-    /// 从 IR 函数 AST 生成汇编函数 AST。
-    fn generate_function(&mut self, c_func: &tacky_ir::Function) -> Result<Function, String> {
-        let mut instructions: Vec<Instruction> = Vec::new();
+        // Pass 2: 替换伪寄存器并计算栈大小
+        let (instructions_with_stack, stack_size) =
+            self.allocate_stack_slots(&initial_instructions);
 
-        for ins in &c_func.body {
-            let generated_instructions = self.generate_instruction(&ins)?;
-            instructions.extend(generated_instructions);
+        // Pass 3: 修复内存到内存的 mov 指令
+        let mut final_instructions = self.fix_memory_moves(&instructions_with_stack);
+
+        // Pass 4: 插入栈分配指令
+        if stack_size > 0 {
+            final_instructions.insert(0, Instruction::AllocateStack(stack_size));
         }
+
         Ok(Function {
-            name: c_func.name.clone(),
-            instructions,
+            name: ir_func.name.clone(),
+            instructions: final_instructions,
         })
+    }
+    fn generate_initial_instructions(
+        &mut self,
+        ir_func: &tacky_ir::Function,
+    ) -> Result<Vec<Instruction>, String> {
+        let mut instructions = Vec::new();
+        for ins in &ir_func.body {
+            instructions.extend(self.generate_instruction(ins)?);
+        }
+        Ok(instructions)
     }
 
     /// 从单个 ir instruction 生成一个或多个汇编指令。
@@ -98,99 +102,73 @@ impl AssemblyGenerator {
             &tacky_ir::Value::Var(name) => Ok(Operand::Pseudo(name.clone())),
         }
     }
-    //把每个伪寄存器操作数替换为内存地址
-    fn replace_fake_register(&mut self, ins: &mut Vec<Instruction>) -> Result<i64, String> {
+    fn fix_memory_moves(&self, instructions: &[Instruction]) -> Vec<Instruction> {
+        let mut new_ins = Vec::with_capacity(instructions.len());
+        let temp_reg = Operand::Register(Reg::R10);
+
+        for item in instructions {
+            if let Instruction::Mov { src, dst } = item {
+                if matches!(src, Operand::Stack(_)) && matches!(dst, Operand::Stack(_)) {
+                    // 1. mov src, %r10d
+                    new_ins.push(Instruction::Mov {
+                        src: src.clone(),
+                        dst: temp_reg.clone(),
+                    });
+                    // 2. mov %r10d, dst
+                    new_ins.push(Instruction::Mov {
+                        src: temp_reg.clone(),
+                        dst: dst.clone(),
+                    });
+                    continue;
+                }
+            }
+            new_ins.push(item.clone());
+        }
+        new_ins
+    }
+    // 它接受一个指令列表，返回一个新的、替换好伪寄存器的列表和栈大小
+    fn allocate_stack_slots(&self, instructions: &[Instruction]) -> (Vec<Instruction>, i64) {
         let mut map: HashMap<String, i64> = HashMap::new();
+        let mut new_instructions = Vec::with_capacity(instructions.len());
 
-        for item in ins {
-            match item {
+        for item in instructions {
+            let new_item = match item {
                 Instruction::Mov { src, dst } => {
-                    // 处理 src 操作数
-                    let new_src = match src {
-                        Operand::Pseudo(name) => {
-                            if let Some(offset) = map.get(name) {
-                                Operand::Stack(*offset)
-                            } else {
-                                let offset = -(map.len() as i64 + 1) * 4;
-                                map.insert(name.clone(), offset);
-                                Operand::Stack(offset)
-                            }
-                        }
-                        _ => src.clone(),
-                    };
-
-                    // 处理 dst 操作数
-                    let new_dst = match dst {
-                        Operand::Pseudo(name) => {
-                            if let Some(offset) = map.get(name) {
-                                Operand::Stack(*offset)
-                            } else {
-                                let offset = -(map.len() as i64 + 1) * 4;
-                                map.insert(name.clone(), offset);
-                                Operand::Stack(offset)
-                            }
-                        }
-                        _ => dst.clone(),
-                    };
-
-                    *item = Instruction::Mov {
+                    let new_src = self.map_operand(src, &mut map);
+                    let new_dst = self.map_operand(dst, &mut map);
+                    Instruction::Mov {
                         src: new_src,
                         dst: new_dst,
-                    };
+                    }
                 }
                 Instruction::Unary { op, operand } => {
-                    let new_operand = match operand {
-                        Operand::Pseudo(name) => {
-                            if let Some(offset) = map.get(name) {
-                                Operand::Stack(*offset)
-                            } else {
-                                let offset = -(map.len() as i64 + 1) * 4;
-                                map.insert(name.clone(), offset);
-                                Operand::Stack(offset)
-                            }
-                        }
-                        _ => operand.clone(),
-                    };
-                    *item = Instruction::Unary {
+                    let new_operand = self.map_operand(operand, &mut map);
+                    Instruction::Unary {
                         op: op.clone(),
                         operand: new_operand,
                     }
                 }
-                _ => {}
-            }
+                _ => item.clone(),
+            };
+            new_instructions.push(new_item);
         }
 
-        // 返回栈空间大小
-        Ok((map.len() as i64) * 4)
+        let stack_size = map.len() as i64 * 4;
+        (new_instructions, stack_size)
     }
-    //fix mov two operand is memory operand
-    fn fix_instruction(&mut self, ins: &Vec<Instruction>) -> Result<Vec<Instruction>, String> {
-        let mut new_ins: Vec<Instruction> = Vec::new();
-        let temp_reg = Operand::Register(Reg::R10); // 使用 R10D 作为临时寄存器
 
-        for item in ins {
-            match item {
-                Instruction::Mov { src, dst } => {
-                    if matches!(src, Operand::Stack(_)) && matches!(dst, Operand::Stack(_)) {
-                        // 1. mov src, %r10d
-                        new_ins.push(Instruction::Mov {
-                            src: src.clone(),
-                            dst: temp_reg.clone(),
-                        });
-                        // 2. mov %r10d, dst
-                        new_ins.push(Instruction::Mov {
-                            src: temp_reg.clone(),
-                            dst: dst.clone(),
-                        });
-                    } else {
-                        new_ins.push(item.clone());
-                    }
-                }
-                Instruction::AllocateStack(_) | Instruction::Ret | Instruction::Unary { .. } => {
-                    new_ins.push(item.clone());
-                }
+    // 替换逻辑
+    fn map_operand<'a>(&self, operand: &'a Operand, map: &mut HashMap<String, i64>) -> Operand {
+        if let Operand::Pseudo(name) = operand {
+            // 先检查 key 是否存在
+            if let Some(offset) = map.get(name) {
+                return Operand::Stack(*offset);
             }
+            let new_offset = -(map.len() as i64 + 1) * 4;
+            map.insert(name.clone(), new_offset);
+            Operand::Stack(new_offset)
+        } else {
+            operand.clone()
         }
-        Ok(new_ins)
     }
 }

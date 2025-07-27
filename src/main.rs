@@ -164,7 +164,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     // 步骤 D: 代码生成
     let assembly_code_ast = codegen(ir_ast)?;
     if cli.codegen {
-        println!("--codegen: 汇编代码生成完成，程序停止。");
+        println!("--codegen: 汇编Ast生成完成，程序停止。");
         return Ok(());
     }
 
@@ -173,12 +173,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     let code_generator = CodeGenerator::new();
     code_generator
         .generate_program_to_file(&assembly_code_ast, &assembly_path.to_string_lossy())?;
-    // 上面这一行调用就完成了所有工作！
-    // 它接收汇编 AST 的引用，以及目标文件路径的引用。
-    // 如果写入失败，`?` 会自动将错误传递出去。
 
-    // (原来的 fs::write 调用就不再需要了)
-    // println! 已经被我们的 CodeGenerator 内部调用了，但在这里再确认一次也很好。
     println!("✅ 汇编代码已生成到: {}", assembly_path.display());
 
     // 步骤 F: 处理 -S 选项
@@ -293,7 +288,8 @@ fn gen_ir(
 fn codegen(ir_ast: crate::backend::tacky_ir::Program) -> Result<assembly_ast::Program, String> {
     let mut ass_gen = AssemblyGenerator::new();
     let ass_ast = ass_gen.generate(ir_ast)?;
-    println!("{:?}", ass_ast);
+    let mut printer = PrettyPrinter::new();
+    ass_ast.pretty_print(&mut printer);
     Ok(ass_ast)
 }
 #[cfg(test)]
