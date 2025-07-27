@@ -1,16 +1,22 @@
 // src/common.rs
 
+use std::io;
+
 pub trait AstNode {
     fn pretty_print(&self, printer: &mut PrettyPrinter);
 }
 
-pub struct PrettyPrinter {
-    pub indent_level: usize,
+pub struct PrettyPrinter<'a> {
+    indent_level: usize,
+    writer: &'a mut dyn io::Write,
 }
 
-impl PrettyPrinter {
-    pub fn new() -> Self {
-        PrettyPrinter { indent_level: 0 }
+impl<'a> PrettyPrinter<'a> {
+    pub fn new(writer: &'a mut dyn io::Write) -> Self {
+        PrettyPrinter {
+            indent_level: 0,
+            writer,
+        }
     }
 
     pub fn indent(&mut self) {
@@ -23,11 +29,16 @@ impl PrettyPrinter {
         }
     }
 
-    pub fn prefix(&self) -> String {
+    fn prefix(&self) -> String {
         "  ".repeat(self.indent_level)
     }
 
-    pub fn writeln(&self, text: &str) {
-        println!("{}{}", self.prefix(), text);
+    pub fn writeln(&mut self, text: &str) -> io::Result<()> {
+        writeln!(self.writer, "{}{}", self.prefix(), text)
+    }
+
+    #[allow(dead_code)]
+    pub fn write_raw(&mut self, text: &str) -> io::Result<()> {
+        write!(self.writer, "{}", text)
     }
 }

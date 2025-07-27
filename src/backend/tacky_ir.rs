@@ -47,11 +47,11 @@ impl fmt::Display for UnaryOp {
 
 impl AstNode for Program {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        printer.writeln("TackyIR_Program");
+        printer.writeln("TackyIR_Program").unwrap();
         printer.indent();
         for function in &self.functions {
             function.pretty_print(printer);
-            printer.writeln("");
+            printer.writeln("").unwrap();
         }
         printer.unindent();
     }
@@ -59,7 +59,7 @@ impl AstNode for Program {
 
 impl AstNode for Function {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        printer.writeln(&format!("{}:", self.name));
+        printer.writeln(&format!("{}:", self.name)).unwrap();
 
         printer.indent();
         for instruction in &self.body {
@@ -79,7 +79,7 @@ impl AstNode for Instruction {
                 format!("{} = {} {}", dst, op, src)
             }
         };
-        printer.writeln(&line);
+        printer.writeln(&line).unwrap();
     }
 }
 

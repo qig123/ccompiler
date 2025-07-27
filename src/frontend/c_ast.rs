@@ -41,7 +41,7 @@ impl fmt::Display for UnaryOp {
 }
 impl AstNode for Program {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        printer.writeln("Program");
+        printer.writeln("Program").unwrap();
         printer.indent();
         for function in &self.functions {
             function.pretty_print(printer);
@@ -56,13 +56,15 @@ impl AstNode for Function {
         } else {
             self.parameters.join(", ")
         };
-        printer.writeln(&format!(
-            "Function(name: {}, params: [{}])",
-            self.name, params
-        ));
+        printer
+            .writeln(&format!(
+                "Function(name: {}, params: [{}])",
+                self.name, params
+            ))
+            .unwrap();
 
         printer.indent();
-        printer.writeln("Body");
+        printer.writeln("Body").unwrap();
         printer.indent();
         for statement in &self.body {
             statement.pretty_print(printer);
@@ -76,7 +78,7 @@ impl AstNode for Statement {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
             Statement::Return(expr) => {
-                printer.writeln("Return");
+                printer.writeln("Return").unwrap();
                 printer.indent();
                 expr.pretty_print(printer);
                 printer.unindent();
@@ -89,10 +91,12 @@ impl AstNode for Expression {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
             Expression::Constant(value) => {
-                printer.writeln(&format!("Constant(value: {})", value));
+                printer
+                    .writeln(&format!("Constant(value: {})", value))
+                    .unwrap();
             }
             Expression::Unary { op, exp } => {
-                printer.writeln(&format!("Unary(op: {})", op));
+                printer.writeln(&format!("Unary(op: {})", op)).unwrap();
                 printer.indent();
                 exp.pretty_print(printer);
                 printer.unindent();

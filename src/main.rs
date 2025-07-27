@@ -265,9 +265,9 @@ fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
     let program = parser.parse()?;
 
     println!("✅ 语法分析完成，开始打印 AST：");
-    // 创建并使用 PrettyPrinter
     println!();
-    let mut printer = PrettyPrinter::new();
+    let mut stdout = io::stdout();
+    let mut printer = PrettyPrinter::new(&mut stdout);
     program.pretty_print(&mut printer);
     println!();
     Ok(program)
@@ -279,7 +279,8 @@ fn gen_ir(
     let mut ir_gen = backend::tacky_gen::TackyGenerator::new();
     let ir_ast = ir_gen.generate_tacky(c_ast)?;
     println!("✅ ir已经生成，开始打印 ：");
-    let mut printer = PrettyPrinter::new();
+    let mut stdout = io::stdout();
+    let mut printer = PrettyPrinter::new(&mut stdout);
     ir_ast.pretty_print(&mut printer);
     Ok(ir_ast)
 }
@@ -288,7 +289,8 @@ fn gen_ir(
 fn codegen(ir_ast: crate::backend::tacky_ir::Program) -> Result<assembly_ast::Program, String> {
     let mut ass_gen = AssemblyGenerator::new();
     let ass_ast = ass_gen.generate(ir_ast)?;
-    let mut printer = PrettyPrinter::new();
+    let mut stdout = io::stdout();
+    let mut printer = PrettyPrinter::new(&mut stdout);
     ass_ast.pretty_print(&mut printer);
     Ok(ass_ast)
 }

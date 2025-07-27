@@ -39,9 +39,11 @@ pub enum Reg {
     AX,
     R10,
 }
+//--------------打印逻辑
+
 impl AstNode for Program {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        printer.writeln("AssemblyProgram");
+        printer.writeln("AssemblyProgram").unwrap();
         printer.indent();
         for function in &self.functions {
             function.pretty_print(printer);
@@ -52,7 +54,9 @@ impl AstNode for Program {
 
 impl AstNode for Function {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        printer.writeln(&format!("Function(name: {})", self.name));
+        printer
+            .writeln(&format!("Function(name: {})", self.name))
+            .unwrap();
         printer.indent();
         for instruction in &self.instructions {
             instruction.pretty_print(printer);
@@ -63,29 +67,25 @@ impl AstNode for Function {
 
 impl AstNode for Instruction {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        // 使用一个 let 绑定来构建字符串，让 match 更干净
-        let line = match self {
-            // movl src, dst
-            Instruction::Mov { src, dst } => {
-                format!("movl {}, {}", src, dst) // 直接使用，会自动调用 .to_string()
-            }
-            // negl operand
-            Instruction::Unary { op, operand } => {
-                format!("{} {}", op, operand)
-            }
-            // subq $N, %rsp
-            Instruction::AllocateStack(size) => {
-                format!("subq ${}, %rsp", size)
-            }
-            // ret
-            Instruction::Ret => "ret".to_string(),
-        };
-
-        // 使用 printer 打印带缩进的行
-        printer.writeln(&line);
+        let line = self.to_string();
+        printer.writeln(&line).unwrap();
     }
 }
 
+impl fmt::Display for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            // movl src, dst
+            Instruction::Mov { src, dst } => write!(f, "movl {}, {}", src, dst),
+            // negl operand
+            Instruction::Unary { op, operand } => write!(f, "{} {}", op, operand),
+            // subq $N, %rsp
+            Instruction::AllocateStack(size) => write!(f, "subq ${}, %rsp", size),
+            // ret
+            Instruction::Ret => write!(f, "ret"),
+        }
+    }
+}
 impl fmt::Display for Reg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // 根据上下文，AX 可以是 rax, eax, ax, al
@@ -112,7 +112,7 @@ impl fmt::Display for Operand {
             // 立即数: $5
             Operand::Imm(val) => write!(f, "${}", val),
             // 寄存器: %eax
-            Operand::Register(reg) => write!(f, "{}", reg), // 直接调用 Reg 的 Display
+            Operand::Register(reg) => write!(f, "{}", reg),
             // 伪寄存器 (用于调试，通常不出现在最终代码)
             Operand::Pseudo(name) => write!(f, "%{}", name),
             // 栈操作数: -4(%rbp)
