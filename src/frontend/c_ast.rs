@@ -1,11 +1,9 @@
 use std::fmt;
 
-use crate::common::PrettyPrinter;
+use crate::common::{AstNode, PrettyPrinter};
 
 //src/frontend/c_ast.rs
-pub trait AstNode {
-    fn pretty_print(&self, printer: &mut PrettyPrinter);
-}
+
 #[derive(Debug)]
 pub struct Program {
     pub functions: Vec<Function>,

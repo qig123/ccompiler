@@ -9,8 +9,8 @@ use std::process::Command;
 use crate::backend::assembly_ast;
 use crate::backend::assembly_ast_gen::AssemblyGenerator;
 use crate::backend::code_gen::CodeGenerator;
+use crate::common::AstNode;
 use crate::common::PrettyPrinter;
-use crate::frontend::c_ast::AstNode;
 use crate::frontend::c_ast::Program;
 use crate::frontend::lexer;
 use crate::frontend::parser;
@@ -74,7 +74,9 @@ struct Cli {
     /// 运行词法分析器和语法分析器，然后停止
     #[arg(long)]
     parse: bool,
-
+    //生成ir
+    #[arg(long)]
+    tacky: bool,
     /// 运行到汇编代码生成，然后停止
     #[arg(long)]
     codegen: bool,
@@ -150,6 +152,12 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     let ast = parse(tokens)?; // parse 应该接收 tokens
     if cli.parse {
         println!("--parse: 语法分析完成，程序停止。");
+        return Ok(());
+    }
+    //步骤d
+    let _ir_ast = gen_ir(&ast);
+    if cli.tacky {
+        println!("--tacky: ir完成，程序停止。");
         return Ok(());
     }
 
@@ -269,6 +277,17 @@ fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
     println!();
     Ok(program)
 }
+fn gen_ir(
+    c_ast: &crate::frontend::c_ast::Program,
+) -> Result<crate::backend::tacky_ir::Program, String> {
+    println!("\n(3) 正在进行ir生成 ");
+    let mut ir_gen = backend::tacky_gen::TackyGenerator::new();
+    let ir_ast = ir_gen.generate_tacky(c_ast)?;
+    println!("✅ ir已经生成，开始打印 ：");
+    let mut printer = PrettyPrinter::new();
+    ir_ast.pretty_print(&mut printer);
+    Ok(ir_ast)
+}
 
 /// 步骤 D: 代码生成 (占位符)
 fn codegen(c_ast: Program) -> Result<assembly_ast::Program, String> {
@@ -290,6 +309,7 @@ mod tests {
             source_file: PathBuf::from(r"./tests/program.c"),
             lex: false,
             parse: false,
+            tacky: true,
             codegen: false,
             save_assembly: false,
         };
