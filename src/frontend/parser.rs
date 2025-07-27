@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use crate::frontend::c_ast::{Expression, Function, Program, Statement};
+use crate::frontend::c_ast::{Expression, Function, Program, Statement, UnaryOp};
 use crate::frontend::lexer::{Token, TokenType};
 
 #[derive(Debug)]
@@ -70,22 +70,50 @@ impl Parser {
         Ok(Statement::Return(expression))
     }
 
-    /// <exp> ::= <int>
+    /// <exp> ::= <int> | <unop> <exp> | "(" <exp> ")"
     fn parse_expression(&mut self) -> Result<Expression, String> {
-        let int_token = self.consume(TokenType::Number)?;
+        // 使用 peek_type 来决定应用哪条语法规则
+        let next_token_type = self.peek_type()?.clone();
+        match next_token_type {
+            // 规则 1: <int>
+            TokenType::Number => {
+                let num_token = self.consume(TokenType::Number)?;
+                let value = num_token
+                    .lexeme
+                    .parse::<i64>()
+                    .map_err(|e| format!("Failed to parse number '{}': {}", num_token.lexeme, e))?;
+                Ok(Expression::Constant(value))
+            }
 
-        let value_str = int_token
-            .value
-            .ok_or_else(|| "Number token is missing a value".to_string())?;
+            // 规则 2: <unop> <exp>
+            TokenType::Negate | TokenType::Complement => {
+                let op_token = self.tokens.next().unwrap();
+                let op = match op_token.type_ {
+                    TokenType::Negate => UnaryOp::Negate,
+                    TokenType::Complement => UnaryOp::Complement,
+                    _ => unreachable!(),
+                };
+                let right_exp = self.parse_expression()?;
+                Ok(Expression::Unary {
+                    op,
+                    exp: Box::new(right_exp),
+                })
+            }
 
-        let value = value_str
-            .parse::<i64>()
-            .map_err(|e| format!("Failed to parse number '{}': {}", value_str, e))?;
-
-        Ok(Expression::Constant(value))
+            // 规则 3: "(" <exp> ")"
+            TokenType::LeftParen => {
+                self.consume(TokenType::LeftParen)?;
+                let inner_exp = self.parse_expression()?;
+                self.consume(TokenType::RightParen)?;
+                Ok(inner_exp)
+            }
+            _ => Err(format!(
+                "Unexpected token {:?}, expected an expression (number, unary operator, or '(').",
+                next_token_type
+            )),
+        }
     }
 
-    /// 消耗并返回一个期望类型的记号，否则返回错误。
     fn consume(&mut self, expected: TokenType) -> Result<Token, String> {
         match self.tokens.next() {
             Some(token) if token.type_ == TokenType::Eof => Err(format!(
@@ -101,6 +129,29 @@ impl Parser {
                 "Expected token {:?}, but the token stream was empty.",
                 expected
             )),
+        }
+    }
+    fn peek_type(&mut self) -> Result<&TokenType, String> {
+        match self.tokens.peek() {
+            Some(token) => Ok(&token.type_),
+            None => Err("Expected a token but found end of file.".to_string()),
+        }
+    }
+    #[allow(dead_code)]
+    fn check(&mut self, expected: &TokenType) -> bool {
+        match self.tokens.peek() {
+            Some(token) if &token.type_ == expected => true,
+            _ => false,
+        }
+    }
+    #[allow(dead_code)]
+    fn match_any(&mut self, types: &[TokenType]) -> bool {
+        match self.tokens.peek() {
+            Some(token) if types.contains(&token.type_) => {
+                self.tokens.next(); // 匹配成功，消耗 token
+                true
+            }
+            _ => false,
         }
     }
 }

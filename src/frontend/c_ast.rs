@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::common::PrettyPrinter;
 
 //src/frontend/c_ast.rs
@@ -24,8 +26,21 @@ pub enum Statement {
 #[derive(Debug)]
 pub enum Expression {
     Constant(i64),
+    Unary { op: UnaryOp, exp: Box<Expression> },
 }
-
+#[derive(Debug)]
+pub enum UnaryOp {
+    Complement,
+    Negate,
+}
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            UnaryOp::Complement => write!(f, "Complement (~)"),
+            UnaryOp::Negate => write!(f, "Negate (-)"),
+        }
+    }
+}
 impl AstNode for Program {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         printer.writeln("Program");
@@ -38,7 +53,6 @@ impl AstNode for Program {
 }
 impl AstNode for Function {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        // 构建函数签名的字符串
         let params = if self.parameters.is_empty() {
             "void".to_string()
         } else {
@@ -49,7 +63,6 @@ impl AstNode for Function {
             self.name, params
         ));
 
-        // 打印函数体
         printer.indent();
         printer.writeln("Body");
         printer.indent();
@@ -79,6 +92,12 @@ impl AstNode for Expression {
         match self {
             Expression::Constant(value) => {
                 printer.writeln(&format!("Constant(value: {})", value));
+            }
+            Expression::Unary { op, exp } => {
+                printer.writeln(&format!("Unary(op: {})", op));
+                printer.indent();
+                exp.pretty_print(printer);
+                printer.unindent();
             }
         }
     }
