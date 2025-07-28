@@ -80,6 +80,9 @@ impl CodeGenerator {
                 self.emit_indented("popq %rbp", writer)?;
                 self.emit_indented("ret", writer)?;
             }
+            _ => {
+                panic!()
+            }
         }
         Ok(())
     }
@@ -111,6 +114,9 @@ impl CodeGenerator {
             Reg::AX => "%eax".to_string(),
             Reg::R10 => "%r10d".to_string(),
             // 如果未来添加了 RSP, RBP, 需要在这里处理
+            _ => {
+                panic!()
+            }
         }
     }
 }

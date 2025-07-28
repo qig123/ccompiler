@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use crate::backend::assembly_ast::{Function, Instruction, Operand, Program, Reg, UnaryOp};
+use crate::backend::assembly_ast::{
+    BinaryOp, Function, Instruction, Operand, Program, Reg, UnaryOp,
+};
 use crate::backend::tacky_ir;
 /// 负责将 IR AST 转换为汇编 AST。
 pub struct AssemblyGenerator {}
@@ -91,8 +93,89 @@ impl AssemblyGenerator {
                 ];
                 ins.extend(instructions);
             }
-            _ => {
-                panic!()
+            tacky_ir::Instruction::Binary {
+                op,
+                src1,
+                src2,
+                dst,
+            } => {
+                let src1_operand = self.generate_expression(src1)?;
+                let src2_operand = self.generate_expression(src2)?;
+                let dst_operand = self.generate_expression(dst)?;
+                match op {
+                    tacky_ir::BinaryOp::Add => {
+                        let instructions = vec![
+                            Instruction::Mov {
+                                src: src1_operand,
+                                dst: dst_operand.clone(),
+                            },
+                            Instruction::Binary {
+                                op: BinaryOp::Add,
+                                left_operand: src2_operand,
+                                right_operand: dst_operand,
+                            },
+                        ];
+                        ins.extend(instructions);
+                    }
+                    tacky_ir::BinaryOp::Subtract => {
+                        let instructions = vec![
+                            Instruction::Mov {
+                                src: src1_operand,
+                                dst: dst_operand.clone(),
+                            },
+                            Instruction::Binary {
+                                op: BinaryOp::Subtract,
+                                left_operand: src2_operand,
+                                right_operand: dst_operand,
+                            },
+                        ];
+                        ins.extend(instructions);
+                    }
+                    tacky_ir::BinaryOp::Multiply => {
+                        let instructions = vec![
+                            Instruction::Mov {
+                                src: src1_operand,
+                                dst: dst_operand.clone(),
+                            },
+                            Instruction::Binary {
+                                op: BinaryOp::Multiply,
+                                left_operand: src2_operand,
+                                right_operand: dst_operand,
+                            },
+                        ];
+                        ins.extend(instructions);
+                    }
+                    tacky_ir::BinaryOp::Divide => {
+                        let instructions = vec![
+                            Instruction::Mov {
+                                src: src1_operand,
+                                dst: Operand::Register(Reg::AX),
+                            },
+                            Instruction::Cdq,
+                            Instruction::Idiv(src2_operand),
+                            Instruction::Mov {
+                                src: Operand::Register(Reg::AX),
+                                dst: dst_operand.clone(),
+                            },
+                        ];
+                        ins.extend(instructions);
+                    }
+                    tacky_ir::BinaryOp::Remainder => {
+                        let instructions = vec![
+                            Instruction::Mov {
+                                src: src1_operand,
+                                dst: Operand::Register(Reg::AX),
+                            },
+                            Instruction::Cdq,
+                            Instruction::Idiv(src2_operand),
+                            Instruction::Mov {
+                                src: Operand::Register(Reg::DX),
+                                dst: dst_operand.clone(),
+                            },
+                        ];
+                        ins.extend(instructions);
+                    }
+                };
             }
         }
 
@@ -125,6 +208,76 @@ impl AssemblyGenerator {
                     continue;
                 }
             }
+            //修复接受常量操作数的 idiv 指令 movl $3, %r10d  idivl %r10d
+            if let Instruction::Idiv(operand) = item {
+                if matches!(operand, Operand::Imm(_)) {
+                    new_ins.push(Instruction::Mov {
+                        src: operand.clone(),
+                        dst: Operand::Register(Reg::R10),
+                    });
+                    new_ins.push(Instruction::Idiv(Operand::Register(Reg::R10)));
+                    continue;
+                }
+            }
+            if let Instruction::Binary {
+                op,
+                left_operand,
+                right_operand,
+            } = item
+            {
+                match op {
+                    BinaryOp::Multiply => {
+                        if matches!(right_operand, Operand::Stack(_)) {
+                            new_ins.push(Instruction::Mov {
+                                src: right_operand.clone(),
+                                dst: Operand::Register(Reg::R11),
+                            });
+                            new_ins.push(Instruction::Binary {
+                                op: BinaryOp::Multiply,
+                                left_operand: left_operand.clone(),
+                                right_operand: Operand::Register(Reg::R11),
+                            });
+                            new_ins.push(Instruction::Mov {
+                                src: Operand::Register(Reg::R11),
+                                dst: right_operand.clone(),
+                            });
+                            continue;
+                        }
+                    }
+                    BinaryOp::Add => {
+                        if matches!(left_operand, Operand::Stack(_))
+                            && matches!(right_operand, Operand::Stack(_))
+                        {
+                            new_ins.push(Instruction::Mov {
+                                src: left_operand.clone(),
+                                dst: temp_reg.clone(),
+                            });
+                            new_ins.push(Instruction::Binary {
+                                op: BinaryOp::Add,
+                                left_operand: temp_reg.clone(),
+                                right_operand: right_operand.clone(),
+                            });
+                            continue;
+                        }
+                    }
+                    BinaryOp::Subtract => {
+                        if matches!(left_operand, Operand::Stack(_))
+                            && matches!(right_operand, Operand::Stack(_))
+                        {
+                            new_ins.push(Instruction::Mov {
+                                src: left_operand.clone(),
+                                dst: temp_reg.clone(),
+                            });
+                            new_ins.push(Instruction::Binary {
+                                op: BinaryOp::Subtract,
+                                left_operand: temp_reg.clone(),
+                                right_operand: right_operand.clone(),
+                            });
+                            continue;
+                        }
+                    }
+                }
+            }
             new_ins.push(item.clone());
         }
         new_ins
@@ -150,6 +303,23 @@ impl AssemblyGenerator {
                         op: op.clone(),
                         operand: new_operand,
                     }
+                }
+                Instruction::Binary {
+                    op,
+                    left_operand,
+                    right_operand,
+                } => {
+                    let new_left = self.map_operand(left_operand, &mut map);
+                    let new_right = self.map_operand(right_operand, &mut map);
+                    Instruction::Binary {
+                        op: op.clone(),
+                        left_operand: new_left,
+                        right_operand: new_right,
+                    }
+                }
+                Instruction::Idiv(operand) => {
+                    let new_operand = self.map_operand(operand, &mut map);
+                    Instruction::Idiv(new_operand)
                 }
                 _ => item.clone(),
             };

@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self};
 
 use crate::common::{AstNode, PrettyPrinter};
 
@@ -16,10 +16,29 @@ pub struct Function {
 
 #[derive(Debug, Clone)]
 pub enum Instruction {
-    Mov { src: Operand, dst: Operand },
-    Unary { op: UnaryOp, operand: Operand },
+    Mov {
+        src: Operand,
+        dst: Operand,
+    },
+    Unary {
+        op: UnaryOp,
+        operand: Operand,
+    },
+    Binary {
+        op: BinaryOp,
+        left_operand: Operand,
+        right_operand: Operand,
+    },
+    Idiv(Operand),
+    Cdq, //拓展eax
     AllocateStack(i64),
     Ret,
+}
+#[derive(Debug, Clone)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
 }
 #[derive(Debug, Clone)]
 pub enum UnaryOp {
@@ -37,7 +56,9 @@ pub enum Operand {
 #[derive(Debug, Clone)]
 pub enum Reg {
     AX,
+    DX,
     R10,
+    R11,
 }
 //--------------打印逻辑
 
@@ -83,6 +104,14 @@ impl fmt::Display for Instruction {
             Instruction::AllocateStack(size) => write!(f, "subq ${}, %rsp", size),
             // ret
             Instruction::Ret => write!(f, "ret"),
+            Instruction::Binary {
+                op,
+                left_operand,
+                right_operand,
+            } => write!(f, "{} {} {}", op, left_operand, right_operand),
+
+            Instruction::Cdq => write!(f, "cdq"),
+            Instruction::Idiv(operand) => write!(f, "idivl {}", operand),
         }
     }
 }
@@ -94,6 +123,8 @@ impl fmt::Display for Reg {
         match self {
             Reg::AX => write!(f, "%eax"),
             Reg::R10 => write!(f, "%r10d"),
+            Reg::DX => write!(f, "%edx"),
+            Reg::R11 => write!(f, "%r11d"),
         }
     }
 }
@@ -103,6 +134,15 @@ impl fmt::Display for UnaryOp {
         match self {
             UnaryOp::Not => write!(f, "notl"), // 'l' 后缀表示 long (32-bit)
             UnaryOp::Neg => write!(f, "negl"),
+        }
+    }
+}
+impl fmt::Display for BinaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BinaryOp::Add => write!(f, "addl"),
+            BinaryOp::Subtract => write!(f, "subl"),
+            BinaryOp::Multiply => write!(f, "imul"),
         }
     }
 }
