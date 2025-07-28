@@ -1,11 +1,16 @@
 // backend/code_gen.rs
 
 use crate::backend::assembly_ast::{
-    BinaryOp, Function, Instruction, Operand, Program, Reg, UnaryOp,
+    BinaryOp, ConditionCode, Function, Instruction, Operand, Program, Reg, UnaryOp,
 };
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
-
+/// x86-64 指令后缀（表示操作数大小）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstructionSuffix {
+    Byte,
+    Long,
+}
 pub struct CodeGenerator {}
 
 impl CodeGenerator {
@@ -60,8 +65,8 @@ impl CodeGenerator {
             Instruction::Mov { src, dst } => {
                 let line = format!(
                     "movl {}, {}",
-                    self.format_operand(src),
-                    self.format_operand(dst)
+                    self.format_operand(src, InstructionSuffix::Long),
+                    self.format_operand(dst, InstructionSuffix::Long)
                 );
                 self.emit_indented(&line, writer)?;
             }
@@ -70,7 +75,11 @@ impl CodeGenerator {
                     UnaryOp::Neg => "negl",
                     UnaryOp::Complement => "notl",
                 };
-                let line = format!("{} {}", op_str, self.format_operand(operand));
+                let line = format!(
+                    "{} {}",
+                    op_str,
+                    self.format_operand(operand, InstructionSuffix::Long)
+                );
                 self.emit_indented(&line, writer)?;
             }
             Instruction::AllocateStack(size) => {
@@ -92,19 +101,37 @@ impl CodeGenerator {
                     BinaryOp::Subtract => "subl",
                     BinaryOp::Multiply => "imull",
                 };
-                let src = self.format_operand(left_operand);
-                let dst = self.format_operand(right_operand);
+                let src = self.format_operand(left_operand, InstructionSuffix::Long);
+                let dst = self.format_operand(right_operand, InstructionSuffix::Long);
                 self.emit_indented(&format!("{} {}, {}", op_str, src, dst), writer)?;
             }
             Instruction::Idiv(operand) => {
-                let opr = self.format_operand(operand);
+                let opr = self.format_operand(operand, InstructionSuffix::Long);
                 self.emit_indented(&format!("idivl {}", opr), writer)?;
             }
             Instruction::Cdq => {
                 self.emit_indented("cdq", writer)?;
             }
-            _ => {
-                panic!()
+            Instruction::Cmp { operand1, operand2 } => {
+                let opr1: String = self.format_operand(operand1, InstructionSuffix::Long);
+                let opr2: String = self.format_operand(operand2, InstructionSuffix::Long);
+                self.emit_indented(&format!("cmpl {}, {}", opr1, opr2), writer)?;
+            }
+            Instruction::Jmp(name) => {
+                self.emit_indented(&format!("jmp .L{}", name), writer)?;
+            }
+            Instruction::JmpCC { condtion, target } => {
+                let c = self.format_condition(condtion);
+                self.emit_indented(&format!("j{} .L{}", c, target), writer)?;
+            }
+            Instruction::SetCC { conditin, operand } => {
+                //当寄存器出现在 SetCC 中时，输出 1 字节的名称，在其他任何地方都输出 4 字节的名称
+                let c = self.format_condition(conditin);
+                let opr = self.format_operand(operand, InstructionSuffix::Byte);
+                self.emit_indented(&format!("set{} {}", c, opr), writer)?;
+            }
+            Instruction::Label(t) => {
+                self.emit_indented(&format!(".L{}:", t), writer)?;
             }
         }
         Ok(())
@@ -118,27 +145,54 @@ impl CodeGenerator {
     }
 
     /// 格式化操作数
-    fn format_operand(&self, operand: &Operand) -> String {
+    fn format_operand(&self, operand: &Operand, s: InstructionSuffix) -> String {
         match operand {
             Operand::Imm(val) => format!("${}", val),
-            Operand::Register(reg) => self.format_reg(reg),
+            Operand::Register(reg) => self.format_reg(reg, s),
             Operand::Stack(offset) => format!("{}(%rbp)", offset),
             Operand::Pseudo(_) => {
-                // 在代码生成阶段，不应该再有伪寄存器
-                // 如果出现，说明之前的编译趟有 bug
                 panic!("伪寄存器不应出现在最终代码生成阶段");
             }
         }
     }
+    fn format_condition(&self, code: &ConditionCode) -> String {
+        match code {
+            ConditionCode::E => {
+                format!("e")
+            }
+            ConditionCode::NE => {
+                format!("ne")
+            }
+            ConditionCode::G => {
+                format!("g")
+            }
+            ConditionCode::GE => {
+                format!("ge")
+            }
+            ConditionCode::L => {
+                format!("l")
+            }
+            ConditionCode::LE => {
+                format!("le")
+            }
+        }
+    }
 
-    /// 格式化寄存器
-    fn format_reg(&self, reg: &Reg) -> String {
-        match reg {
-            Reg::AX => "%eax".to_string(),
-            Reg::DX => "%edx".to_string(),
-            Reg::R10 => "%r10d".to_string(),
-            Reg::R11 => "%r11d".to_string(),
-            // 如果未来添加了 RSP, RBP, 需要在这里处理
+    fn format_reg(&self, reg: &Reg, s: InstructionSuffix) -> String {
+        match s {
+            InstructionSuffix::Byte => match reg {
+                Reg::AX => "%al".to_string(),
+                Reg::DX => "%dl".to_string(),
+                Reg::R10 => "%r10b".to_string(),
+                Reg::R11 => "%r11b".to_string(),
+            },
+
+            InstructionSuffix::Long => match reg {
+                Reg::AX => "%eax".to_string(),
+                Reg::DX => "%edx".to_string(),
+                Reg::R10 => "%r10d".to_string(),
+                Reg::R11 => "%r11d".to_string(),
+            },
         }
     }
 }

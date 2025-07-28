@@ -86,7 +86,7 @@ struct Cli {
     #[arg(long)]
     codegen: bool,
 
-    /// 生成汇编文件 (.s) 但不进行汇编或链接
+    /// 生成汇编文件 (.s)
     #[arg(short = 'S', long = "save-assembly")]
     save_assembly: bool,
 }
@@ -167,8 +167,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     emit_assembly(&assembly_code_ast, &assembly_path)?;
     if cli.save_assembly {
         janitor.keep(&assembly_path);
-        println!("\n-S: 保留汇编文件，不进行链接。编译成功！");
-        return Ok(());
+        println!("\n-S: 保留汇编文件，并进行链接。编译成功！");
     }
 
     // 步骤 F -> (6)
@@ -303,8 +302,8 @@ mod tests {
             lex: false,
             parse: false,
             tacky: false,
-            codegen: true,
-            save_assembly: false,
+            codegen: false,
+            save_assembly: true,
         };
         run_compiler(cli)
     }
