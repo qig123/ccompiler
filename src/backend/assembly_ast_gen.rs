@@ -65,19 +65,19 @@ impl AssemblyGenerator {
     }
 
     fn process_function(&mut self, ir_func: &tacky_ir::Function) -> Result<Function, String> {
-        // Pass 1: IR -> 初始汇编指令
+        // 第 1 步：将 IR 转换为初始汇编指令
         let initial_instructions = self.generate_initial_instructions(ir_func)?;
 
-        // Pass 2: 替换伪寄存器并计算栈大小
+        // 第 2 步：替换伪寄存器并计算栈大小
         let (instructions_with_stack, stack_size) =
             self.allocate_stack_slots(&initial_instructions);
 
-        // Pass 3: 修复无效指令 (例如内存到内存的移动)
+        // 第 3 步：修复无效指令 (例如内存到内存的移动)
         let mut final_instructions = self.patch_instructions(&instructions_with_stack);
 
-        // Pass 4: 插入栈分配指令
+        // 第 4 步：插入栈分配指令
         if stack_size > 0 {
-            // x86-64 要求栈是 16 字节对齐的.
+            // x86-64 要求栈是 16 字节对齐的
             let aligned_stack_size = (stack_size + 15) & !15;
             final_instructions.insert(0, Instruction::AllocateStack(aligned_stack_size));
         }
@@ -100,6 +100,41 @@ impl AssemblyGenerator {
             .map(|vecs| vecs.into_iter().flatten().collect())
     }
 
+    /// (重构后的辅助函数) 为关系运算符和逻辑 NOT 生成指令序列。
+    /// 该函数生成标准的 `cmp/setcc/movzbl` 模式。
+    fn generate_relational_op_instructions(
+        &self,
+        op1: &Operand,
+        op2: &Operand,
+        dst: &Operand,
+        cc: ConditionCode,
+    ) -> Vec<Instruction> {
+        vec![
+            // 1. 比较两个操作数
+            Instruction::Cmp {
+                operand1: op2.clone(),
+                operand2: op1.clone(),
+            },
+            // 2. 根据条件设置字节大小的 AL 寄存器
+            Instruction::SetCC {
+                conditin: cc,
+                operand: Operand::Register(Reg::AX), // SetCC 将使用8位的 %al 部分
+            },
+            // 3. 将字节从 %al 移动到完整的 %eax 寄存器，并进行零扩展。
+            //    我们通过一个从8位源到32位目标的移动来表示这一点。
+            //    我们的代码生成器需要处理这个特殊情况。
+            Instruction::Mov {
+                src: Operand::Register(Reg::AX), // 暗示源是 %al
+                dst: Operand::Register(Reg::AX), // 暗示目标是 %eax
+            },
+            // 4. 将最终结果（在 %eax 中的 0 或 1）移动到目标位置。
+            Instruction::Mov {
+                src: Operand::Register(Reg::AX),
+                dst: dst.clone(),
+            },
+        ]
+    }
+
     /// 从单个 ir instruction 生成一个或多个汇编指令。
     fn generate_instruction(
         &self,
@@ -116,45 +151,37 @@ impl AssemblyGenerator {
                     Instruction::Ret,
                 ])
             }
-            tacky_ir::Instruction::Unary { op, src, dst } => match op {
-                tacky_ir::UnaryOp::Complement | tacky_ir::UnaryOp::Negate => {
-                    let src_operand = self.generate_expression(src)?;
-                    let dst_operand = self.generate_expression(dst)?;
-                    let op_type = match op {
-                        tacky_ir::UnaryOp::Complement => UnaryOp::Complement,
-                        tacky_ir::UnaryOp::Negate => UnaryOp::Neg,
-                        _ => unreachable!(),
-                    };
-                    Ok(vec![
-                        Instruction::Mov {
-                            src: src_operand,
-                            dst: dst_operand.clone(),
-                        },
-                        Instruction::Unary {
-                            op: op_type,
-                            operand: dst_operand,
-                        },
-                    ])
+            tacky_ir::Instruction::Unary { op, src, dst } => {
+                let src_operand = self.generate_expression(src)?;
+                let dst_operand = self.generate_expression(dst)?;
+                match op {
+                    // 处理 ~ 和 -
+                    tacky_ir::UnaryOp::Complement | tacky_ir::UnaryOp::Negate => {
+                        let op_type = match op {
+                            tacky_ir::UnaryOp::Complement => UnaryOp::Complement,
+                            tacky_ir::UnaryOp::Negate => UnaryOp::Neg,
+                            _ => unreachable!(),
+                        };
+                        Ok(vec![
+                            Instruction::Mov {
+                                src: src_operand,
+                                dst: dst_operand.clone(),
+                            },
+                            Instruction::Unary {
+                                op: op_type,
+                                operand: dst_operand,
+                            },
+                        ])
+                    }
+                    // !x 等价于 x == 0
+                    tacky_ir::UnaryOp::Not => Ok(self.generate_relational_op_instructions(
+                        &src_operand,
+                        &Operand::Imm(0),
+                        &dst_operand,
+                        ConditionCode::E,
+                    )),
                 }
-                tacky_ir::UnaryOp::Not => {
-                    let src_operand = self.generate_expression(src)?;
-                    let dst_operand = self.generate_expression(dst)?;
-                    Ok(vec![
-                        Instruction::Cmp {
-                            operand1: Operand::Imm(0),
-                            operand2: src_operand,
-                        },
-                        Instruction::Mov {
-                            src: Operand::Imm(0),
-                            dst: dst_operand.clone(),
-                        },
-                        Instruction::SetCC {
-                            conditin: ConditionCode::E,
-                            operand: dst_operand,
-                        },
-                    ])
-                }
-            },
+            }
             tacky_ir::Instruction::Binary {
                 op,
                 src1,
@@ -166,6 +193,7 @@ impl AssemblyGenerator {
                 let dst_operand = self.generate_expression(dst)?;
 
                 match op {
+                    // 除法和取余的特殊情况
                     tacky_ir::BinaryOp::Divide => Ok(vec![
                         Instruction::Mov {
                             src: src1_operand,
@@ -190,98 +218,36 @@ impl AssemblyGenerator {
                             dst: dst_operand,
                         },
                     ]),
-                    //关系运算符
-                    tacky_ir::BinaryOp::EqualEqual => Ok(vec![
-                        Instruction::Cmp {
-                            operand1: src2_operand.clone(),
-                            operand2: src1_operand.clone(),
-                        },
-                        Instruction::Mov {
-                            src: Operand::Imm(0),
-                            dst: dst_operand.clone(),
-                        },
-                        Instruction::SetCC {
-                            conditin: ConditionCode::E,
-                            operand: dst_operand.clone(),
-                        },
-                    ]),
-                    tacky_ir::BinaryOp::BangEqual => Ok(vec![
-                        Instruction::Cmp {
-                            operand1: src2_operand.clone(),
-                            operand2: src1_operand.clone(),
-                        },
-                        Instruction::Mov {
-                            src: Operand::Imm(0),
-                            dst: dst_operand.clone(),
-                        },
-                        Instruction::SetCC {
-                            conditin: ConditionCode::NE,
-                            operand: dst_operand.clone(),
-                        },
-                    ]),
-                    tacky_ir::BinaryOp::Greater => Ok(vec![
-                        Instruction::Cmp {
-                            operand1: src2_operand.clone(),
-                            operand2: src1_operand.clone(),
-                        },
-                        Instruction::Mov {
-                            src: Operand::Imm(0),
-                            dst: dst_operand.clone(),
-                        },
-                        Instruction::SetCC {
-                            conditin: ConditionCode::G,
-                            operand: dst_operand.clone(),
-                        },
-                    ]),
-                    tacky_ir::BinaryOp::GreaterEqual => Ok(vec![
-                        Instruction::Cmp {
-                            operand1: src2_operand.clone(),
-                            operand2: src1_operand.clone(),
-                        },
-                        Instruction::Mov {
-                            src: Operand::Imm(0),
-                            dst: dst_operand.clone(),
-                        },
-                        Instruction::SetCC {
-                            conditin: ConditionCode::GE,
-                            operand: dst_operand.clone(),
-                        },
-                    ]),
-                    tacky_ir::BinaryOp::Less => Ok(vec![
-                        Instruction::Cmp {
-                            operand1: src2_operand.clone(),
-                            operand2: src1_operand.clone(),
-                        },
-                        Instruction::Mov {
-                            src: Operand::Imm(0),
-                            dst: dst_operand.clone(),
-                        },
-                        Instruction::SetCC {
-                            conditin: ConditionCode::L,
-                            operand: dst_operand.clone(),
-                        },
-                    ]),
-                    tacky_ir::BinaryOp::LessEqual => Ok(vec![
-                        Instruction::Cmp {
-                            operand1: src2_operand.clone(),
-                            operand2: src1_operand.clone(),
-                        },
-                        Instruction::Mov {
-                            src: Operand::Imm(0),
-                            dst: dst_operand.clone(),
-                        },
-                        Instruction::SetCC {
-                            conditin: ConditionCode::LE,
-                            operand: dst_operand.clone(),
-                        },
-                    ]),
+                    // 关系运算符现在使用辅助函数
+                    tacky_ir::BinaryOp::EqualEqual
+                    | tacky_ir::BinaryOp::BangEqual
+                    | tacky_ir::BinaryOp::Greater
+                    | tacky_ir::BinaryOp::GreaterEqual
+                    | tacky_ir::BinaryOp::Less
+                    | tacky_ir::BinaryOp::LessEqual => {
+                        let cc = match op {
+                            tacky_ir::BinaryOp::EqualEqual => ConditionCode::E,
+                            tacky_ir::BinaryOp::BangEqual => ConditionCode::NE,
+                            tacky_ir::BinaryOp::Greater => ConditionCode::G,
+                            tacky_ir::BinaryOp::GreaterEqual => ConditionCode::GE,
+                            tacky_ir::BinaryOp::Less => ConditionCode::L,
+                            tacky_ir::BinaryOp::LessEqual => ConditionCode::LE,
+                            _ => unreachable!(),
+                        };
+                        Ok(self.generate_relational_op_instructions(
+                            &src1_operand,
+                            &src2_operand,
+                            &dst_operand,
+                            cc,
+                        ))
+                    }
+                    // 标准算术运算符
                     _ => {
                         let asm_op = match op {
                             tacky_ir::BinaryOp::Add => BinaryOp::Add,
                             tacky_ir::BinaryOp::Subtract => BinaryOp::Subtract,
                             tacky_ir::BinaryOp::Multiply => BinaryOp::Multiply,
-                            // 前面的 match 已经处理了 Divide 和 Remainder，这里不会发生
-                            _ => unreachable!(),
+                            _ => unreachable!("应在前面处理"),
                         };
                         Ok(vec![
                             Instruction::Mov {

@@ -303,7 +303,7 @@ mod tests {
             parse: false,
             tacky: false,
             codegen: false,
-            save_assembly: true,
+            save_assembly: false,
         };
         run_compiler(cli)
     }
