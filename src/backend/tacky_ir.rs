@@ -160,9 +160,16 @@ impl AstNode for Instruction {
                 format!("JumpIfNotZero {} {}", condition, target)
             }
             Instruction::Label(t) => {
-                format!("{}: ", t)
+                format!("{}:", t)
             }
         };
-        printer.writeln(&line).unwrap();
+        // Labels shouldn't be indented like other instructions
+        if let Instruction::Label(_) = self {
+            printer.unindent();
+            printer.writeln(&line).unwrap();
+            printer.indent();
+        } else {
+            printer.writeln(&line).unwrap();
+        }
     }
 }

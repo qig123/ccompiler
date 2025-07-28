@@ -27,6 +27,12 @@ pub struct TackyGenerator {
     name_gen: UniqueNameGenerator,
 }
 
+// A helper enum to make the short-circuiting logic more readable.
+enum ShortCircuitJump {
+    OnZero,
+    OnNotZero,
+}
+
 impl TackyGenerator {
     pub fn new() -> Self {
         TackyGenerator {
@@ -65,6 +71,68 @@ impl TackyGenerator {
         }
     }
 
+    /// Generates TACKY IR for short-circuiting binary operators like `&&` and `||`.
+    ///
+    /// # Arguments
+    /// * `left`, `right` - The left and right hand side expressions.
+    /// * `jump_type` - The condition on which to short-circuit.
+    /// * `short_circuit_val` - The value to assign to the result if we short-circuit.
+    /// * `fall_through_val` - The value to assign to the result if we don't short-circuit.
+    fn generate_short_circuit_op(
+        &mut self,
+        left: &c_ast::Expression,
+        right: &c_ast::Expression,
+        jump_type: ShortCircuitJump,
+        short_circuit_val: i64,
+        fall_through_val: i64,
+    ) -> Result<(Vec<Instruction>, Value), String> {
+        // 1. Evaluate left expression
+        let (mut instructions, v1) = self.generate_tacky_exp(left)?;
+
+        // 2. Generate labels
+        let short_circuit_label = self.name_gen.new_temp_label();
+        let end_label = self.name_gen.new_temp_label();
+
+        // 3. Helper function to create the correct jump instruction
+        let make_jump = |condition, target| match jump_type {
+            ShortCircuitJump::OnZero => Instruction::JumpIfZero { condition, target },
+            ShortCircuitJump::OnNotZero => Instruction::JumpIfNotZero { condition, target },
+        };
+
+        // 4. Conditional jump for left expression
+        instructions.push(make_jump(v1, short_circuit_label.clone()));
+
+        // 5. Evaluate right expression
+        let (instrs2, v2) = self.generate_tacky_exp(right)?;
+        instructions.extend(instrs2);
+
+        // 6. Conditional jump for right expression
+        instructions.push(make_jump(v2, short_circuit_label.clone()));
+
+        // 7. Create result variable
+        let result_var = self.name_gen.new_temp_var();
+        let result = Value::Var(result_var);
+
+        // 8. Fall-through case (no short-circuit happened)
+        instructions.push(Instruction::Copy {
+            src: Value::Constant(fall_through_val),
+            dst: result.clone(),
+        });
+        instructions.push(Instruction::Jump(end_label.clone()));
+
+        // 9. Short-circuit case
+        instructions.push(Instruction::Label(short_circuit_label));
+        instructions.push(Instruction::Copy {
+            src: Value::Constant(short_circuit_val),
+            dst: result.clone(),
+        });
+
+        // 10. End label
+        instructions.push(Instruction::Label(end_label));
+
+        Ok((instructions, result))
+    }
+
     /// 修改后的核心函数
     /// 返回: (生成的指令列表, 表达式结果存放的 Value)
     fn generate_tacky_exp(
@@ -74,7 +142,6 @@ impl TackyGenerator {
         match exp {
             c_ast::Expression::Constant(i) => Ok((Vec::new(), Value::Constant(*i))),
 
-            // 递归情况：一元运算
             c_ast::Expression::Unary { op, exp } => {
                 let (mut instructions, src_value) = self.generate_tacky_exp(exp)?;
                 let dst_var_name = self.name_gen.new_temp_var();
@@ -92,97 +159,22 @@ impl TackyGenerator {
                 Ok((instructions, dst_value))
             }
             c_ast::Expression::Binary { op, left, right } => match op {
-                c_ast::BinaryOp::And => {
-                    // 1. 计算 e1 -> v1
-                    let (mut instructions, v1) = self.generate_tacky_exp(left)?;
-                    let label_false = self.name_gen.new_temp_label();
-                    let label_end = self.name_gen.new_temp_label();
-
-                    // 2. 短路跳转: if (v1 == 0) goto false_label
-                    instructions.push(Instruction::JumpIfZero {
-                        condition: v1,
-                        target: label_false.clone(),
-                    });
-
-                    // 3. 计算 e2 -> v2
-                    let (instructions2, v2) = self.generate_tacky_exp(right)?;
-                    instructions.extend(instructions2);
-
-                    // 4. 短路跳转: if (v2 == 0) goto false_label
-                    instructions.push(Instruction::JumpIfZero {
-                        condition: v2,
-                        target: label_false.clone(),
-                    });
-
-                    // 5. 创建唯一的结果变量
-                    let result_var = self.name_gen.new_temp_var();
-                    let result = Value::Var(result_var.clone());
-
-                    // 6. 真分支: result = 1
-                    instructions.push(Instruction::Copy {
-                        src: Value::Constant(1),
-                        dst: result.clone(),
-                    });
-
-                    // 7. 跳转到结束
-                    instructions.push(Instruction::Jump(label_end.clone()));
-                    // 8. 假分支标签: result = 0
-                    instructions.push(Instruction::Label(label_false));
-                    instructions.push(Instruction::Copy {
-                        src: Value::Constant(0),
-                        dst: result.clone(),
-                    });
-                    // 9. 结束标签
-                    instructions.push(Instruction::Label(label_end));
-                    Ok((instructions, result))
-                }
-                c_ast::BinaryOp::Or => {
-                    // 1. 计算 e1 -> v1
-                    let (mut instructions, v1) = self.generate_tacky_exp(left)?;
-                    let label_true = self.name_gen.new_temp_label(); // 真分支标签
-                    let label_end = self.name_gen.new_temp_label();
-
-                    // 2. 短路跳转: if (v1 != 0) goto true_label
-                    instructions.push(Instruction::JumpIfNotZero {
-                        condition: v1,
-                        target: label_true.clone(),
-                    });
-
-                    // 3. 计算 e2 -> v2
-                    let (instructions2, v2) = self.generate_tacky_exp(right)?;
-                    instructions.extend(instructions2);
-
-                    // 4. 短路跳转: if (v2 != 0) goto true_label
-                    instructions.push(Instruction::JumpIfNotZero {
-                        condition: v2,
-                        target: label_true.clone(),
-                    });
-
-                    // 5. 创建结果变量
-                    let result_var = self.name_gen.new_temp_var();
-                    let result = Value::Var(result_var.clone());
-
-                    // 6. 假分支: result = 0 (e1 和 e2 均为假)
-                    instructions.push(Instruction::Copy {
-                        src: Value::Constant(0),
-                        dst: result.clone(),
-                    });
-
-                    // 7. 跳转到结束 (避免进入真分支)
-                    instructions.push(Instruction::Jump(label_end.clone()));
-
-                    // 8. 真分支标签: result = 1
-                    instructions.push(Instruction::Label(label_true));
-                    instructions.push(Instruction::Copy {
-                        src: Value::Constant(1),
-                        dst: result.clone(),
-                    });
-                    // 9. 结束标签
-                    instructions.push(Instruction::Label(label_end));
-
-                    Ok((instructions, result))
-                }
+                c_ast::BinaryOp::And => self.generate_short_circuit_op(
+                    left,
+                    right,
+                    ShortCircuitJump::OnZero, // For &&, we short-circuit if a value is 0
+                    0,                        // The result is 0 if we short-circuit
+                    1,                        // The result is 1 if we don't (fall-through)
+                ),
+                c_ast::BinaryOp::Or => self.generate_short_circuit_op(
+                    left,
+                    right,
+                    ShortCircuitJump::OnNotZero, // For ||, we short-circuit if a value is not 0
+                    1,                           // The result is 1 if we short-circuit
+                    0,                           // The result is 0 if we don't (fall-through)
+                ),
                 _ => {
+                    // All other binary operators that don't short-circuit
                     let (mut instructions1, src1_value) = self.generate_tacky_exp(left)?;
                     let (instructions2, src2_value) = self.generate_tacky_exp(right)?;
                     let dst_var_name = self.name_gen.new_temp_var();
@@ -199,7 +191,7 @@ impl TackyGenerator {
                         c_ast::BinaryOp::GreaterEqual => BinaryOp::GreaterEqual,
                         c_ast::BinaryOp::Less => BinaryOp::Less,
                         c_ast::BinaryOp::LessEqual => BinaryOp::LessEqual,
-                        _ => unreachable!(),
+                        _ => unreachable!("Handled by short-circuiting logic"),
                     };
                     instructions1.extend(instructions2);
                     instructions1.push(Instruction::Binary {
