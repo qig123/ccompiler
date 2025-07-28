@@ -113,6 +113,9 @@ impl AssemblyGenerator {
                 let op_type = match op {
                     tacky_ir::UnaryOp::Complement => UnaryOp::Not,
                     tacky_ir::UnaryOp::Negate => UnaryOp::Neg,
+                    _ => {
+                        panic!()
+                    }
                 };
                 Ok(vec![
                     Instruction::Mov {
@@ -181,6 +184,9 @@ impl AssemblyGenerator {
                         ])
                     }
                 }
+            }
+            _ => {
+                panic!()
             }
         }
     }

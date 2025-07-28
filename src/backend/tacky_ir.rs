@@ -3,7 +3,6 @@
 use crate::common::{AstNode, PrettyPrinter};
 use std::fmt;
 
-// Program, Function, Instruction, Value 定义保持不变
 #[derive(Debug, Clone)]
 pub struct Program {
     pub functions: Vec<Function>,
@@ -27,6 +26,20 @@ pub enum Instruction {
         src2: Value,
         dst: Value,
     },
+    Copy {
+        src: Value,
+        dst: Value,
+    },
+    Jump(String),
+    JumpIfZero {
+        condition: Value,
+        target: String,
+    },
+    JumpIfNotZero {
+        condition: Value,
+        target: String,
+    },
+    Label(String),
 }
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -37,6 +50,7 @@ pub enum Value {
 pub enum UnaryOp {
     Complement,
     Negate,
+    Not,
 }
 #[derive(Debug, Clone)]
 pub enum BinaryOp {
@@ -45,6 +59,12 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Remainder,
+    EqualEqual,
+    BangEqual,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
 }
 
 impl fmt::Display for Value {
@@ -63,6 +83,7 @@ impl fmt::Display for UnaryOp {
             UnaryOp::Complement => write!(f, "~"),
             // - 用于算术取负
             UnaryOp::Negate => write!(f, "-"),
+            UnaryOp::Not => write!(f, "!"),
         }
     }
 }
@@ -75,6 +96,12 @@ impl fmt::Display for BinaryOp {
             BinaryOp::Multiply => write!(f, "*"),
             BinaryOp::Divide => write!(f, "/"),
             BinaryOp::Remainder => write!(f, "%"),
+            BinaryOp::BangEqual => write!(f, "!="),
+            BinaryOp::EqualEqual => write!(f, "=="),
+            BinaryOp::Greater => write!(f, ">"),
+            BinaryOp::GreaterEqual => write!(f, ">="),
+            BinaryOp::Less => write!(f, "<"),
+            BinaryOp::LessEqual => write!(f, "<="),
         }
     }
 }
@@ -119,6 +146,21 @@ impl AstNode for Instruction {
                 dst,
             } => {
                 format!("{} = {} {} {}", dst, src1, op, src2)
+            }
+            Instruction::Copy { src, dst } => {
+                format!("Copy {} {}", src, dst)
+            }
+            Instruction::Jump(s) => {
+                format!("Jump {}", s)
+            }
+            Instruction::JumpIfZero { condition, target } => {
+                format!("JumpIfZero {} {}", condition, target)
+            }
+            Instruction::JumpIfNotZero { condition, target } => {
+                format!("JumpIfNotZero {} {}", condition, target)
+            }
+            Instruction::Label(t) => {
+                format!("{}: ", t)
             }
         };
         printer.writeln(&line).unwrap();
