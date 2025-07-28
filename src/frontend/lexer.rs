@@ -21,6 +21,7 @@ pub enum TokenType {
     Remainder, // %
     Greater,
     Less,
+    Assignment, //
     // two-character
     Decrement,    // --
     And,          // &&
@@ -181,7 +182,11 @@ impl Lexer {
                             value: None,
                         });
                     } else {
-                        return Err(format!("Unexpected character: {}", c));
+                        tokens.push(Token {
+                            lexeme: c.to_string(),
+                            type_: TokenType::Assignment,
+                            value: None,
+                        });
                     }
                 }
                 '0'..='9' => {

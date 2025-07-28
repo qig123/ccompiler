@@ -8,7 +8,7 @@ cargo build
 echo "--- 正在运行测试... ---"
 
 # 定义要执行的命令
-TEST_COMMAND="../writing-a-c-compiler-tests/test_compiler ./target/debug/ccompiler --chapter 4 "
+TEST_COMMAND="../writing-a-c-compiler-tests/test_compiler ./target/debug/ccompiler --chapter 5 --stage lex "
 
 # 打印命令
 echo "$ $TEST_COMMAND"
