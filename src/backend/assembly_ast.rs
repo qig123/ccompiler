@@ -27,10 +27,33 @@ pub enum Instruction {
         left_operand: Operand,
         right_operand: Operand,
     },
+    Cmp {
+        operand1: Operand,
+        operand2: Operand,
+    },
     Idiv(Operand),
-    Cdq, //拓展eax
+    Cdq,
+    Jmp(String),
+    JmpCC {
+        condtion: ConditionCode,
+        target: String,
+    },
+    SetCC {
+        conditin: ConditionCode,
+        operand: Operand,
+    },
+    Label(String),
     AllocateStack(i64),
     Ret,
+}
+#[derive(Debug, Clone)]
+pub enum ConditionCode {
+    E,
+    NE,
+    G,
+    GE,
+    L,
+    LE,
 }
 #[derive(Debug, Clone)]
 pub enum BinaryOp {
@@ -40,7 +63,7 @@ pub enum BinaryOp {
 }
 #[derive(Debug, Clone)]
 pub enum UnaryOp {
-    Not, //按位取反
+    Complement, //按位取反
     Neg,
 }
 

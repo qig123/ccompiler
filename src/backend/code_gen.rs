@@ -68,7 +68,7 @@ impl CodeGenerator {
             Instruction::Unary { op, operand } => {
                 let op_str = match op {
                     UnaryOp::Neg => "negl",
-                    UnaryOp::Not => "notl",
+                    UnaryOp::Complement => "notl",
                 };
                 let line = format!("{} {}", op_str, self.format_operand(operand));
                 self.emit_indented(&line, writer)?;
@@ -102,6 +102,9 @@ impl CodeGenerator {
             }
             Instruction::Cdq => {
                 self.emit_indented("cdq", writer)?;
+            }
+            _ => {
+                panic!()
             }
         }
         Ok(())

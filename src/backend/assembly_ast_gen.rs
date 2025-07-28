@@ -1,9 +1,10 @@
 // src/backend/assembly_ast_gen.rs
 
 use std::collections::HashMap;
+use std::vec;
 
 use crate::backend::assembly_ast::{
-    BinaryOp, Function, Instruction, Operand, Program, Reg, UnaryOp,
+    BinaryOp, ConditionCode, Function, Instruction, Operand, Program, Reg, UnaryOp,
 };
 use crate::backend::tacky_ir;
 
@@ -34,6 +35,14 @@ impl Instruction {
                 right_operand: f(right_operand),
             },
             Instruction::Idiv(operand) => Instruction::Idiv(f(operand)),
+            Instruction::SetCC { conditin, operand } => Instruction::SetCC {
+                conditin: conditin.clone(),
+                operand: f(operand),
+            },
+            Instruction::Cmp { operand1, operand2 } => Instruction::Cmp {
+                operand1: f(operand1),
+                operand2: f(operand2),
+            },
             // 其他没有操作数的指令直接克隆
             _ => self.clone(),
         }
@@ -107,27 +116,45 @@ impl AssemblyGenerator {
                     Instruction::Ret,
                 ])
             }
-            tacky_ir::Instruction::Unary { op, src, dst } => {
-                let src_operand = self.generate_expression(src)?;
-                let dst_operand = self.generate_expression(dst)?;
-                let op_type = match op {
-                    tacky_ir::UnaryOp::Complement => UnaryOp::Not,
-                    tacky_ir::UnaryOp::Negate => UnaryOp::Neg,
-                    _ => {
-                        panic!()
-                    }
-                };
-                Ok(vec![
-                    Instruction::Mov {
-                        src: src_operand,
-                        dst: dst_operand.clone(),
-                    },
-                    Instruction::Unary {
-                        op: op_type,
-                        operand: dst_operand,
-                    },
-                ])
-            }
+            tacky_ir::Instruction::Unary { op, src, dst } => match op {
+                tacky_ir::UnaryOp::Complement | tacky_ir::UnaryOp::Negate => {
+                    let src_operand = self.generate_expression(src)?;
+                    let dst_operand = self.generate_expression(dst)?;
+                    let op_type = match op {
+                        tacky_ir::UnaryOp::Complement => UnaryOp::Complement,
+                        tacky_ir::UnaryOp::Negate => UnaryOp::Neg,
+                        _ => unreachable!(),
+                    };
+                    Ok(vec![
+                        Instruction::Mov {
+                            src: src_operand,
+                            dst: dst_operand.clone(),
+                        },
+                        Instruction::Unary {
+                            op: op_type,
+                            operand: dst_operand,
+                        },
+                    ])
+                }
+                tacky_ir::UnaryOp::Not => {
+                    let src_operand = self.generate_expression(src)?;
+                    let dst_operand = self.generate_expression(dst)?;
+                    Ok(vec![
+                        Instruction::Cmp {
+                            operand1: Operand::Imm(0),
+                            operand2: src_operand,
+                        },
+                        Instruction::Mov {
+                            src: Operand::Imm(0),
+                            dst: dst_operand.clone(),
+                        },
+                        Instruction::SetCC {
+                            conditin: ConditionCode::E,
+                            operand: dst_operand,
+                        },
+                    ])
+                }
+            },
             tacky_ir::Instruction::Binary {
                 op,
                 src1,
@@ -163,6 +190,91 @@ impl AssemblyGenerator {
                             dst: dst_operand,
                         },
                     ]),
+                    //关系运算符
+                    tacky_ir::BinaryOp::EqualEqual => Ok(vec![
+                        Instruction::Cmp {
+                            operand1: src2_operand.clone(),
+                            operand2: src1_operand.clone(),
+                        },
+                        Instruction::Mov {
+                            src: Operand::Imm(0),
+                            dst: dst_operand.clone(),
+                        },
+                        Instruction::SetCC {
+                            conditin: ConditionCode::E,
+                            operand: dst_operand.clone(),
+                        },
+                    ]),
+                    tacky_ir::BinaryOp::BangEqual => Ok(vec![
+                        Instruction::Cmp {
+                            operand1: src2_operand.clone(),
+                            operand2: src1_operand.clone(),
+                        },
+                        Instruction::Mov {
+                            src: Operand::Imm(0),
+                            dst: dst_operand.clone(),
+                        },
+                        Instruction::SetCC {
+                            conditin: ConditionCode::NE,
+                            operand: dst_operand.clone(),
+                        },
+                    ]),
+                    tacky_ir::BinaryOp::Greater => Ok(vec![
+                        Instruction::Cmp {
+                            operand1: src2_operand.clone(),
+                            operand2: src1_operand.clone(),
+                        },
+                        Instruction::Mov {
+                            src: Operand::Imm(0),
+                            dst: dst_operand.clone(),
+                        },
+                        Instruction::SetCC {
+                            conditin: ConditionCode::G,
+                            operand: dst_operand.clone(),
+                        },
+                    ]),
+                    tacky_ir::BinaryOp::GreaterEqual => Ok(vec![
+                        Instruction::Cmp {
+                            operand1: src2_operand.clone(),
+                            operand2: src1_operand.clone(),
+                        },
+                        Instruction::Mov {
+                            src: Operand::Imm(0),
+                            dst: dst_operand.clone(),
+                        },
+                        Instruction::SetCC {
+                            conditin: ConditionCode::GE,
+                            operand: dst_operand.clone(),
+                        },
+                    ]),
+                    tacky_ir::BinaryOp::Less => Ok(vec![
+                        Instruction::Cmp {
+                            operand1: src2_operand.clone(),
+                            operand2: src1_operand.clone(),
+                        },
+                        Instruction::Mov {
+                            src: Operand::Imm(0),
+                            dst: dst_operand.clone(),
+                        },
+                        Instruction::SetCC {
+                            conditin: ConditionCode::L,
+                            operand: dst_operand.clone(),
+                        },
+                    ]),
+                    tacky_ir::BinaryOp::LessEqual => Ok(vec![
+                        Instruction::Cmp {
+                            operand1: src2_operand.clone(),
+                            operand2: src1_operand.clone(),
+                        },
+                        Instruction::Mov {
+                            src: Operand::Imm(0),
+                            dst: dst_operand.clone(),
+                        },
+                        Instruction::SetCC {
+                            conditin: ConditionCode::LE,
+                            operand: dst_operand.clone(),
+                        },
+                    ]),
                     _ => {
                         let asm_op = match op {
                             tacky_ir::BinaryOp::Add => BinaryOp::Add,
@@ -185,9 +297,42 @@ impl AssemblyGenerator {
                     }
                 }
             }
-            _ => {
-                panic!()
+            tacky_ir::Instruction::Jump(t) => Ok(vec![Instruction::Jmp(t.clone())]),
+            tacky_ir::Instruction::JumpIfZero { condition, target } => {
+                let condition_value = self.generate_expression(condition)?;
+                Ok(vec![
+                    Instruction::Cmp {
+                        operand1: Operand::Imm(0),
+                        operand2: condition_value,
+                    },
+                    Instruction::JmpCC {
+                        condtion: ConditionCode::E,
+                        target: target.clone(),
+                    },
+                ])
             }
+            tacky_ir::Instruction::JumpIfNotZero { condition, target } => {
+                let condition_value = self.generate_expression(condition)?;
+                Ok(vec![
+                    Instruction::Cmp {
+                        operand1: Operand::Imm(0),
+                        operand2: condition_value,
+                    },
+                    Instruction::JmpCC {
+                        condtion: ConditionCode::NE,
+                        target: target.clone(),
+                    },
+                ])
+            }
+            tacky_ir::Instruction::Copy { src, dst } => {
+                let src_operand = self.generate_expression(src)?;
+                let dst_operand = self.generate_expression(dst)?;
+                Ok(vec![Instruction::Mov {
+                    src: src_operand,
+                    dst: dst_operand,
+                }])
+            }
+            tacky_ir::Instruction::Label(t) => Ok(vec![Instruction::Label(t.clone())]),
         }
     }
 
@@ -266,6 +411,32 @@ impl AssemblyGenerator {
                         // 其他二元操作都是有效的
                         _ => new_ins.push(item.clone()),
                     }
+                }
+                Instruction::Cmp {
+                    operand1: Operand::Stack(s_off),
+                    operand2: Operand::Stack(d_off),
+                } => {
+                    new_ins.push(Instruction::Mov {
+                        src: Operand::Stack(*s_off),
+                        dst: Operand::Register(Reg::R10),
+                    });
+                    new_ins.push(Instruction::Cmp {
+                        operand1: Operand::Register(Reg::R10),
+                        operand2: Operand::Stack(*d_off),
+                    });
+                }
+                Instruction::Cmp {
+                    operand1,
+                    operand2: Operand::Imm(i),
+                } => {
+                    new_ins.push(Instruction::Mov {
+                        src: Operand::Imm(*i),
+                        dst: Operand::Register(Reg::R11),
+                    });
+                    new_ins.push(Instruction::Cmp {
+                        operand1: operand1.clone(),
+                        operand2: Operand::Register(Reg::R11),
+                    });
                 }
                 // 其他所有指令都是有效的
                 _ => new_ins.push(item.clone()),

@@ -302,8 +302,8 @@ mod tests {
             source_file: PathBuf::from(r"./tests/program.c"),
             lex: false,
             parse: false,
-            tacky: true,
-            codegen: false,
+            tacky: false,
+            codegen: true,
             save_assembly: false,
         };
         run_compiler(cli)
