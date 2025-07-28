@@ -46,7 +46,7 @@ impl TackyGenerator {
             let mut all_instructions = Vec::new();
             for statement in &item.body {
                 match statement {
-                    BlockItem::D(d) => {
+                    BlockItem::D(_d) => {
                         panic!()
                     }
                     BlockItem::S(s) => {

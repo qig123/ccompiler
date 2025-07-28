@@ -74,6 +74,7 @@ pub enum BinaryOp {
     Greater,
 }
 
+// --- Display Trait 实现 (与您版本相同，此处省略) ---
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -104,6 +105,8 @@ impl fmt::Display for BinaryOp {
     }
 }
 
+// --- AstNode Trait (Pretty Printer) 实现 ---
+
 impl AstNode for Program {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         printer.writeln("Program").unwrap();
@@ -130,29 +133,47 @@ impl AstNode for Function {
             .unwrap();
 
         printer.indent();
-        // 如果函数体不为空，可以打印一个 "Body" 标签来分隔
         if !self.body.is_empty() {
             printer.writeln("Body").unwrap();
             printer.indent();
-            for statement in &self.body {
-                statement.pretty_print(printer);
+            for item in &self.body {
+                item.pretty_print(printer); // 打印 BlockItem
             }
             printer.unindent();
         }
         printer.unindent();
     }
 }
+
+// 优化: 为 BlockItem 实现 pretty_print
 impl AstNode for BlockItem {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
-            Self::D(d) => {}
-            Self::S(s) => {}
+            // 直接委托给内部的 Statement 或 Declaration
+            BlockItem::S(s) => s.pretty_print(printer),
+            BlockItem::D(d) => d.pretty_print(printer),
         }
     }
 }
+
+// 优化: 为 Declaration 实现 pretty_print
 impl AstNode for Declaration {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        todo!()
+        // 检查是否有初始化表达式
+        if let Some(init_expr) = &self.init {
+            // 如果有，打印一个更详细的节点信息
+            printer
+                .writeln(&format!("Declare(name: \"{}\", with init)", self.name))
+                .unwrap();
+            printer.indent();
+            init_expr.pretty_print(printer); // 打印初始化表达式的子树
+            printer.unindent();
+        } else {
+            // 如果没有，只打印变量名
+            printer
+                .writeln(&format!("Declare(name: \"{}\")", self.name))
+                .unwrap();
+        }
     }
 }
 
@@ -160,20 +181,21 @@ impl AstNode for Statement {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
             Statement::Return(expr) => {
-                // Return 节点后面紧跟其表达式子树
                 printer.writeln("Return").unwrap();
                 printer.indent();
                 expr.pretty_print(printer);
                 printer.unindent();
             }
             Statement::Expression(e) => {
-                printer.writeln("Expression").unwrap();
+                // 优化: 明确这是一个表达式语句
+                printer.writeln("ExpressionStatement").unwrap();
                 printer.indent();
                 e.pretty_print(printer);
                 printer.unindent();
             }
             Statement::Null => {
-                printer.writeln(";").unwrap();
+                // 优化: 使用更具描述性的名称
+                printer.writeln("NullStatement(;)").unwrap();
             }
         }
     }
@@ -183,29 +205,26 @@ impl AstNode for Expression {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
             Expression::Constant(value) => {
-                // 叶子节点，直接打印
                 printer.writeln(&format!("Constant({})", value)).unwrap();
             }
             Expression::Unary { op, exp } => {
-                // 打印节点信息，然后缩进，打印子节点，最后取消缩进
-                printer.writeln(&format!("Unary({})", op)).unwrap();
+                printer.writeln(&format!("Unary(op: '{}')", op)).unwrap();
                 printer.indent();
                 exp.pretty_print(printer);
                 printer.unindent();
             }
             Expression::Binary { op, left, right } => {
-                // 同样，打印节点信息，然后处理子节点
-                printer.writeln(&format!("Binary({})", op)).unwrap();
+                printer.writeln(&format!("Binary(op: '{}')", op)).unwrap();
                 printer.indent();
                 left.pretty_print(printer);
                 right.pretty_print(printer);
                 printer.unindent();
             }
             Expression::Var(n) => {
-                printer.writeln(&format!("Var({})", n)).unwrap();
+                printer.writeln(&format!("Var(name: \"{}\")", n)).unwrap();
             }
             Expression::Assignment { left, right } => {
-                printer.writeln(&format!("Assign(=)")).unwrap();
+                printer.writeln("Assignment(op: '=')").unwrap();
                 printer.indent();
                 left.pretty_print(printer);
                 right.pretty_print(printer);
