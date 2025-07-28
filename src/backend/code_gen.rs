@@ -1,6 +1,8 @@
 // backend/code_gen.rs
 
-use crate::backend::assembly_ast::{Function, Instruction, Operand, Program, Reg, UnaryOp};
+use crate::backend::assembly_ast::{
+    BinaryOp, Function, Instruction, Operand, Program, Reg, UnaryOp,
+};
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 
@@ -80,8 +82,26 @@ impl CodeGenerator {
                 self.emit_indented("popq %rbp", writer)?;
                 self.emit_indented("ret", writer)?;
             }
-            _ => {
-                panic!()
+            Instruction::Binary {
+                op,
+                left_operand,
+                right_operand,
+            } => {
+                let op_str = match op {
+                    BinaryOp::Add => "addl",
+                    BinaryOp::Subtract => "subl",
+                    BinaryOp::Multiply => "imull",
+                };
+                let src = self.format_operand(left_operand);
+                let dst = self.format_operand(right_operand);
+                self.emit_indented(&format!("{} {}, {}", op_str, src, dst), writer)?;
+            }
+            Instruction::Idiv(operand) => {
+                let opr = self.format_operand(operand);
+                self.emit_indented(&format!("idivl {}", opr), writer)?;
+            }
+            Instruction::Cdq => {
+                self.emit_indented("cdq", writer)?;
             }
         }
         Ok(())
@@ -112,11 +132,10 @@ impl CodeGenerator {
     fn format_reg(&self, reg: &Reg) -> String {
         match reg {
             Reg::AX => "%eax".to_string(),
+            Reg::DX => "%edx".to_string(),
             Reg::R10 => "%r10d".to_string(),
+            Reg::R11 => "%r11d".to_string(),
             // 如果未来添加了 RSP, RBP, 需要在这里处理
-            _ => {
-                panic!()
-            }
         }
     }
 }

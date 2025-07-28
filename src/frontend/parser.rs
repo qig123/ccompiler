@@ -136,7 +136,9 @@ impl Parser {
                 break;
             }
             self.tokens.next(); // 消费操作符
-            let right = self.parse_exp(op_prec)?;
+            // 对于左结合操作符，右侧表达式的优先级必须更高。
+            // 因此，我们传入 op_prec + 1 作为新的最小优先级。
+            let right = self.parse_exp(op_prec + 1)?;
             let binop = match op.type_ {
                 TokenType::Add => BinaryOp::Add,
                 TokenType::Negate => BinaryOp::Subtract,
