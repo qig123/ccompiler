@@ -1,18 +1,18 @@
-use std::fmt;
+// src/frontend/c_ast.rs
 
 use crate::common::{AstNode, PrettyPrinter};
+use std::fmt;
 
-//src/frontend/c_ast.rs
-
+// AST 定义保持不变
 #[derive(Debug)]
 pub struct Program {
     pub functions: Vec<Function>,
 }
-
+// ... 其他定义 ...
 #[derive(Debug)]
 pub struct Function {
     pub name: String,
-    pub parameters: Vec<String>, // Will be empty for "void"
+    pub parameters: Vec<String>,
     pub body: Vec<Statement>,
 }
 
@@ -34,11 +34,13 @@ pub enum Expression {
         right: Box<Expression>,
     },
 }
+
 #[derive(Debug)]
 pub enum UnaryOp {
     Complement,
     Negate,
 }
+
 #[derive(Debug)]
 pub enum BinaryOp {
     Add,
@@ -47,14 +49,16 @@ pub enum BinaryOp {
     Divide,
     Remainder,
 }
+
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            UnaryOp::Complement => write!(f, "Complement (~)"),
-            UnaryOp::Negate => write!(f, "Negate (-)"),
+            UnaryOp::Complement => write!(f, "~"),
+            UnaryOp::Negate => write!(f, "-"),
         }
     }
 }
+
 impl fmt::Display for BinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -66,6 +70,7 @@ impl fmt::Display for BinaryOp {
         }
     }
 }
+
 impl AstNode for Program {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         printer.writeln("Program").unwrap();
@@ -76,27 +81,31 @@ impl AstNode for Program {
         printer.unindent();
     }
 }
+
 impl AstNode for Function {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        let params = if self.parameters.is_empty() {
+        let params_str = if self.parameters.is_empty() {
             "void".to_string()
         } else {
             self.parameters.join(", ")
         };
         printer
             .writeln(&format!(
-                "Function(name: {}, params: [{}])",
-                self.name, params
+                "Function(name: \"{}\", params: [{}])",
+                self.name, params_str
             ))
             .unwrap();
 
         printer.indent();
-        printer.writeln("Body").unwrap();
-        printer.indent();
-        for statement in &self.body {
-            statement.pretty_print(printer);
+        // 如果函数体不为空，可以打印一个 "Body" 标签来分隔
+        if !self.body.is_empty() {
+            printer.writeln("Body").unwrap();
+            printer.indent();
+            for statement in &self.body {
+                statement.pretty_print(printer);
+            }
+            printer.unindent();
         }
-        printer.unindent();
         printer.unindent();
     }
 }
@@ -105,6 +114,7 @@ impl AstNode for Statement {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
             Statement::Return(expr) => {
+                // Return 节点后面紧跟其表达式子树
                 printer.writeln("Return").unwrap();
                 printer.indent();
                 expr.pretty_print(printer);
@@ -118,22 +128,22 @@ impl AstNode for Expression {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
             Expression::Constant(value) => {
-                printer
-                    .writeln(&format!("Constant(value: {})", value))
-                    .unwrap();
+                // 叶子节点，直接打印
+                printer.writeln(&format!("Constant({})", value)).unwrap();
             }
             Expression::Unary { op, exp } => {
-                printer.writeln(&format!("Unary(op: {})", op)).unwrap();
+                // 打印节点信息，然后缩进，打印子节点，最后取消缩进
+                printer.writeln(&format!("Unary({})", op)).unwrap();
                 printer.indent();
                 exp.pretty_print(printer);
                 printer.unindent();
             }
             Expression::Binary { op, left, right } => {
-                printer.writeln(&format!("Binary({}", op)).unwrap();
+                // 同样，打印节点信息，然后处理子节点
+                printer.writeln(&format!("Binary({})", op)).unwrap();
                 printer.indent();
                 left.pretty_print(printer);
                 right.pretty_print(printer);
-                printer.writeln(&format!(")")).unwrap();
                 printer.unindent();
             }
         }

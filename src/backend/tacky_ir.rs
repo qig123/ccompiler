@@ -1,8 +1,9 @@
-use std::fmt;
+// src/backend/tacky_ir.rs
 
 use crate::common::{AstNode, PrettyPrinter};
+use std::fmt;
 
-//src/backend/tacky_ir.rs
+// Program, Function, Instruction, Value 定义保持不变
 #[derive(Debug, Clone)]
 pub struct Program {
     pub functions: Vec<Function>,
@@ -45,6 +46,7 @@ pub enum BinaryOp {
     Divide,
     Remainder,
 }
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -57,19 +59,22 @@ impl fmt::Display for Value {
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            UnaryOp::Complement => write!(f, "COMPLEMENT"),
-            UnaryOp::Negate => write!(f, "NEG"),
+            // ~ 用于按位取反
+            UnaryOp::Complement => write!(f, "~"),
+            // - 用于算术取负
+            UnaryOp::Negate => write!(f, "-"),
         }
     }
 }
+
 impl fmt::Display for BinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BinaryOp::Add => write!(f, "Add"),
-            BinaryOp::Subtract => write!(f, "Subtract"),
-            BinaryOp::Multiply => write!(f, "Multiply"),
-            BinaryOp::Divide => write!(f, "Divide"),
-            BinaryOp::Remainder => write!(f, "Remainder"),
+            BinaryOp::Add => write!(f, "+"),
+            BinaryOp::Subtract => write!(f, "-"),
+            BinaryOp::Multiply => write!(f, "*"),
+            BinaryOp::Divide => write!(f, "/"),
+            BinaryOp::Remainder => write!(f, "%"),
         }
     }
 }
@@ -113,7 +118,7 @@ impl AstNode for Instruction {
                 src2,
                 dst,
             } => {
-                format!("{} = {} {} {}", dst, op, src1, src2)
+                format!("{} = {} {} {}", dst, src1, op, src2)
             }
         };
         printer.writeln(&line).unwrap();
