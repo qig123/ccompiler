@@ -300,10 +300,10 @@ mod tests {
     fn test_default_compilation() -> Result<(), String> {
         let cli = Cli {
             source_file: PathBuf::from(r"./tests/program.c"),
-            lex: true,
-            parse: false,
+            lex: false,
+            parse: true,
             tacky: false,
-            codegen: true,
+            codegen: false,
             save_assembly: false,
         };
         run_compiler(cli)

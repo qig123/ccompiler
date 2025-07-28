@@ -86,11 +86,12 @@ impl Parser {
             }
 
             // 规则 2: <unop> <exp>
-            TokenType::Negate | TokenType::Complement => {
+            TokenType::Negate | TokenType::Complement | TokenType::Bang => {
                 let op_token = self.tokens.next().unwrap();
                 let op = match op_token.type_ {
                     TokenType::Negate => UnaryOp::Negate,
                     TokenType::Complement => UnaryOp::Complement,
+                    TokenType::Bang => UnaryOp::Not,
                     _ => unreachable!(),
                 };
                 let right_exp = self.parse_factor()?;
@@ -127,7 +128,15 @@ impl Parser {
                 | TokenType::Mul
                 | TokenType::Div
                 | TokenType::Remainder
-                | TokenType::Negate => next_token,
+                | TokenType::Negate
+                | TokenType::And
+                | TokenType::Or
+                | TokenType::BangEqual
+                | TokenType::EqualEqual
+                | TokenType::Greater
+                | TokenType::GreaterEqual
+                | TokenType::Less
+                | TokenType::LessEqual => next_token,
                 _ => break, // 不是中缀操作符，表达式结束
             };
 
@@ -145,6 +154,14 @@ impl Parser {
                 TokenType::Mul => BinaryOp::Multiply,
                 TokenType::Div => BinaryOp::Divide,
                 TokenType::Remainder => BinaryOp::Remainder,
+                TokenType::And => BinaryOp::And,
+                TokenType::Or => BinaryOp::Or,
+                TokenType::BangEqual => BinaryOp::BangEqual,
+                TokenType::EqualEqual => BinaryOp::EqualEqual,
+                TokenType::Greater => BinaryOp::Greater,
+                TokenType::GreaterEqual => BinaryOp::GreaterEqual,
+                TokenType::Less => BinaryOp::Less,
+                TokenType::LessEqual => BinaryOp::LessEqual,
                 _ => unreachable!(),
             };
             left = Expression::Binary {
@@ -160,6 +177,13 @@ impl Parser {
         match typ {
             TokenType::Mul | TokenType::Div | TokenType::Remainder => 50,
             TokenType::Add | TokenType::Negate => 45,
+            TokenType::Greater
+            | TokenType::GreaterEqual
+            | TokenType::Less
+            | TokenType::LessEqual => 35,
+            TokenType::EqualEqual | TokenType::BangEqual => 30,
+            TokenType::And => 10,
+            TokenType::Or => 5,
             _ => {
                 unreachable!()
             }

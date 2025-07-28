@@ -3,12 +3,10 @@
 use crate::common::{AstNode, PrettyPrinter};
 use std::fmt;
 
-// AST 定义保持不变
 #[derive(Debug)]
 pub struct Program {
     pub functions: Vec<Function>,
 }
-// ... 其他定义 ...
 #[derive(Debug)]
 pub struct Function {
     pub name: String,
@@ -39,6 +37,7 @@ pub enum Expression {
 pub enum UnaryOp {
     Complement,
     Negate,
+    Not,
 }
 
 #[derive(Debug)]
@@ -48,6 +47,14 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Remainder,
+    And,
+    Or,
+    EqualEqual,
+    BangEqual,
+    LessEqual,
+    GreaterEqual,
+    Less,
+    Greater,
 }
 
 impl fmt::Display for UnaryOp {
@@ -55,6 +62,7 @@ impl fmt::Display for UnaryOp {
         match self {
             UnaryOp::Complement => write!(f, "~"),
             UnaryOp::Negate => write!(f, "-"),
+            UnaryOp::Not => write!(f, "!"),
         }
     }
 }
@@ -67,6 +75,14 @@ impl fmt::Display for BinaryOp {
             BinaryOp::Multiply => write!(f, "*"),
             BinaryOp::Divide => write!(f, "/"),
             BinaryOp::Remainder => write!(f, "%"),
+            BinaryOp::And => write!(f, "&&"),
+            BinaryOp::Or => write!(f, "||"),
+            BinaryOp::BangEqual => write!(f, "!="),
+            BinaryOp::EqualEqual => write!(f, "=="),
+            BinaryOp::Greater => write!(f, ">"),
+            BinaryOp::GreaterEqual => write!(f, ">="),
+            BinaryOp::Less => write!(f, "<"),
+            BinaryOp::LessEqual => write!(f, "<="),
         }
     }
 }

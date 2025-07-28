@@ -77,6 +77,7 @@ impl TackyGenerator {
                 let tacky_op = match op {
                     c_ast::UnaryOp::Complement => UnaryOp::Complement,
                     c_ast::UnaryOp::Negate => UnaryOp::Negate,
+                    _ => panic!(),
                 };
                 instructions.push(Instruction::Unary {
                     op: tacky_op,
@@ -96,6 +97,7 @@ impl TackyGenerator {
                     c_ast::BinaryOp::Multiply => BinaryOp::Multiply,
                     c_ast::BinaryOp::Divide => BinaryOp::Divide,
                     c_ast::BinaryOp::Remainder => BinaryOp::Remainder,
+                    _ => panic!(),
                 };
                 instructions1.extend(instructions2);
                 instructions1.push(Instruction::Binary {
