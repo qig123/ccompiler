@@ -11,12 +11,24 @@ pub struct Program {
 pub struct Function {
     pub name: String,
     pub parameters: Vec<String>,
-    pub body: Vec<Statement>,
+    pub body: Vec<BlockItem>,
+}
+#[derive(Debug)]
+pub enum BlockItem {
+    S(Statement),
+    D(Declaration),
+}
+#[derive(Debug)]
+pub struct Declaration {
+    pub name: String,
+    pub init: Option<Box<Expression>>,
 }
 
 #[derive(Debug)]
 pub enum Statement {
     Return(Expression),
+    Expression(Expression),
+    Null,
 }
 
 #[derive(Debug)]
@@ -28,6 +40,11 @@ pub enum Expression {
     },
     Binary {
         op: BinaryOp,
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
+    Var(String),
+    Assignment {
         left: Box<Expression>,
         right: Box<Expression>,
     },
@@ -125,6 +142,19 @@ impl AstNode for Function {
         printer.unindent();
     }
 }
+impl AstNode for BlockItem {
+    fn pretty_print(&self, printer: &mut PrettyPrinter) {
+        match self {
+            Self::D(d) => {}
+            Self::S(s) => {}
+        }
+    }
+}
+impl AstNode for Declaration {
+    fn pretty_print(&self, printer: &mut PrettyPrinter) {
+        todo!()
+    }
+}
 
 impl AstNode for Statement {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
@@ -135,6 +165,15 @@ impl AstNode for Statement {
                 printer.indent();
                 expr.pretty_print(printer);
                 printer.unindent();
+            }
+            Statement::Expression(e) => {
+                printer.writeln("Expression").unwrap();
+                printer.indent();
+                e.pretty_print(printer);
+                printer.unindent();
+            }
+            Statement::Null => {
+                printer.writeln(";").unwrap();
             }
         }
     }
@@ -157,6 +196,16 @@ impl AstNode for Expression {
             Expression::Binary { op, left, right } => {
                 // 同样，打印节点信息，然后处理子节点
                 printer.writeln(&format!("Binary({})", op)).unwrap();
+                printer.indent();
+                left.pretty_print(printer);
+                right.pretty_print(printer);
+                printer.unindent();
+            }
+            Expression::Var(n) => {
+                printer.writeln(&format!("Var({})", n)).unwrap();
+            }
+            Expression::Assignment { left, right } => {
+                printer.writeln(&format!("Assign(=)")).unwrap();
                 printer.indent();
                 left.pretty_print(printer);
                 right.pretty_print(printer);

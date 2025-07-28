@@ -1,7 +1,10 @@
+use std::fmt::format;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 
-use crate::frontend::c_ast::{BinaryOp, Expression, Function, Program, Statement, UnaryOp};
+use crate::frontend::c_ast::{
+    BinaryOp, BlockItem, Declaration, Expression, Function, Program, Statement, UnaryOp,
+};
 use crate::frontend::lexer::{Token, TokenType};
 
 #[derive(Debug)]
@@ -40,15 +43,22 @@ impl Parser {
         })
     }
 
-    /// <function> ::= "int" <identifier> "(" "void" ")" "{" <statement> "}"
+    /// <function> ::= "int" <identifier> "(" "void" ")" "{" {<block-item>} "}"
     fn parse_function(&mut self) -> Result<Function, String> {
+        let mut bs = Vec::new();
         self.consume(TokenType::Int)?;
         let name_token = self.consume(TokenType::Identifier)?;
         self.consume(TokenType::LeftParen)?;
         self.consume(TokenType::Void)?;
         self.consume(TokenType::RightParen)?;
         self.consume(TokenType::LeftBrace)?;
-        let statement = self.parse_statement()?;
+
+        // 解析函数体 {<block-item>}
+        while !self.check(&TokenType::RightBrace) {
+            let b = self.parse_blockitem()?;
+            bs.push(b);
+        }
+
         self.consume(TokenType::RightBrace)?;
 
         let name = name_token
@@ -58,18 +68,67 @@ impl Parser {
         Ok(Function {
             name,
             parameters: Vec::new(),
-            body: vec![statement],
+            body: bs,
         })
     }
+    //<block-item> ::= <statement> | <declaration>
+    fn parse_blockitem(&mut self) -> Result<BlockItem, String> {
+        let next = self.tokens.peek().ok_or("Unexpected EOF")?;
 
-    /// <statement> ::= "return" <exp> ";"
-    fn parse_statement(&mut self) -> Result<Statement, String> {
-        self.consume(TokenType::Return)?;
-        let expression = self.parse_exp(0)?;
-        self.consume(TokenType::Semicolon)?;
-        Ok(Statement::Return(expression))
+        match next.type_ {
+            TokenType::Int => {
+                let decl = self.parse_dec()?;
+                Ok(BlockItem::D(decl))
+            }
+            // 其他情况视为语句
+            _ => {
+                let stmt = self.parse_statement()?;
+                Ok(BlockItem::S(stmt))
+            }
+        }
     }
-    //<factor>     ::= <int> | <unop> <factor> | "(" <exp> ")"
+
+    /// <statement> ::= "return" <exp> ";" | <exp> ";" | ";"
+    fn parse_statement(&mut self) -> Result<Statement, String> {
+        let next = self.tokens.peek().ok_or("Unexpected EOF")?;
+
+        match next.type_ {
+            TokenType::Return => {
+                self.consume(TokenType::Return)?;
+                let expr = self.parse_exp(0)?;
+                self.consume(TokenType::Semicolon)?;
+                Ok(Statement::Return(expr))
+            }
+            TokenType::Semicolon => {
+                self.consume(TokenType::Semicolon)?;
+                Ok(Statement::Null)
+            }
+            _ => {
+                let expr = self.parse_exp(0)?;
+                self.consume(TokenType::Semicolon)?;
+                Ok(Statement::Expression(expr))
+            }
+        }
+    }
+    //<declaration> ::= "int" <identifier> ["=" <exp>] ";"
+    fn parse_dec(&mut self) -> Result<Declaration, String> {
+        self.consume(TokenType::Int)?;
+        let id = self.consume(TokenType::Identifier)?;
+        let name = id.value.ok_or("Identifier missing name")?;
+        // 检查可选初始化部分
+        let init = if self.check(&TokenType::Assignment) {
+            // 明确检查 `=`
+            self.consume(TokenType::Assignment)?;
+            Some(Box::new(self.parse_exp(0)?))
+        } else {
+            None
+        };
+
+        // 必须以分号结尾
+        self.consume(TokenType::Semicolon)?;
+        Ok(Declaration { name, init })
+    }
+    //<factor> ::= <int> | <identifier> | <unop> <factor> | "(" <exp> ")"
 
     fn parse_factor(&mut self) -> Result<Expression, String> {
         // 使用 peek_type 来决定应用哪条语法规则
@@ -108,6 +167,10 @@ impl Parser {
                 self.consume(TokenType::RightParen)?;
                 Ok(inner_exp)
             }
+            TokenType::Identifier => {
+                let id = self.consume(TokenType::Identifier)?;
+                Ok(Expression::Var(id.value.unwrap()))
+            }
             _ => Err(format!(
                 "Unexpected token {:?}, expected an expression (number, unary operator, or '(').",
                 next_token_type
@@ -136,39 +199,56 @@ impl Parser {
                 | TokenType::Greater
                 | TokenType::GreaterEqual
                 | TokenType::Less
-                | TokenType::LessEqual => next_token,
+                | TokenType::LessEqual
+                | TokenType::Assignment => next_token,
                 _ => break, // 不是中缀操作符，表达式结束
             };
+            match op.type_ {
+                TokenType::Assignment => {
+                    let op_prec = self.get_precedence(op.type_.clone());
+                    if op_prec < min_prec {
+                        break;
+                    }
+                    self.tokens.next();
+                    let right = self.parse_exp(op_prec)?;
 
-            let op_prec = self.get_precedence(op.type_.clone());
-            if op_prec < min_prec {
-                break;
+                    left = Expression::Assignment {
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    };
+                }
+                _ => {
+                    let op_prec = self.get_precedence(op.type_.clone());
+                    if op_prec < min_prec {
+                        break;
+                    }
+                    self.tokens.next(); // 消费操作符
+                    // 对于左结合操作符，右侧表达式的优先级必须更高。
+                    // 因此，我们传入 op_prec + 1 作为新的最小优先级。
+                    let right = self.parse_exp(op_prec + 1)?;
+                    let binop = match op.type_ {
+                        TokenType::Add => BinaryOp::Add,
+                        TokenType::Negate => BinaryOp::Subtract,
+                        TokenType::Mul => BinaryOp::Multiply,
+                        TokenType::Div => BinaryOp::Divide,
+                        TokenType::Remainder => BinaryOp::Remainder,
+                        TokenType::And => BinaryOp::And,
+                        TokenType::Or => BinaryOp::Or,
+                        TokenType::BangEqual => BinaryOp::BangEqual,
+                        TokenType::EqualEqual => BinaryOp::EqualEqual,
+                        TokenType::Greater => BinaryOp::Greater,
+                        TokenType::GreaterEqual => BinaryOp::GreaterEqual,
+                        TokenType::Less => BinaryOp::Less,
+                        TokenType::LessEqual => BinaryOp::LessEqual,
+                        _ => unreachable!(),
+                    };
+                    left = Expression::Binary {
+                        op: binop,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    };
+                }
             }
-            self.tokens.next(); // 消费操作符
-            // 对于左结合操作符，右侧表达式的优先级必须更高。
-            // 因此，我们传入 op_prec + 1 作为新的最小优先级。
-            let right = self.parse_exp(op_prec + 1)?;
-            let binop = match op.type_ {
-                TokenType::Add => BinaryOp::Add,
-                TokenType::Negate => BinaryOp::Subtract,
-                TokenType::Mul => BinaryOp::Multiply,
-                TokenType::Div => BinaryOp::Divide,
-                TokenType::Remainder => BinaryOp::Remainder,
-                TokenType::And => BinaryOp::And,
-                TokenType::Or => BinaryOp::Or,
-                TokenType::BangEqual => BinaryOp::BangEqual,
-                TokenType::EqualEqual => BinaryOp::EqualEqual,
-                TokenType::Greater => BinaryOp::Greater,
-                TokenType::GreaterEqual => BinaryOp::GreaterEqual,
-                TokenType::Less => BinaryOp::Less,
-                TokenType::LessEqual => BinaryOp::LessEqual,
-                _ => unreachable!(),
-            };
-            left = Expression::Binary {
-                op: binop,
-                left: Box::new(left),
-                right: Box::new(right),
-            };
         }
 
         Ok(left)
@@ -184,6 +264,7 @@ impl Parser {
             TokenType::EqualEqual | TokenType::BangEqual => 30,
             TokenType::And => 10,
             TokenType::Or => 5,
+            TokenType::Assignment => 1,
             _ => {
                 unreachable!()
             }

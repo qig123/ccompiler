@@ -1,5 +1,5 @@
 use crate::backend::tacky_ir::*;
-use crate::frontend::c_ast;
+use crate::frontend::c_ast::{self, BlockItem};
 
 #[derive(Debug, Default)]
 pub struct UniqueNameGenerator {
@@ -45,8 +45,15 @@ impl TackyGenerator {
         for item in &c_ast.functions {
             let mut all_instructions = Vec::new();
             for statement in &item.body {
-                let instructions = self.generate_tacky_statement(statement)?;
-                all_instructions.extend(instructions);
+                match statement {
+                    BlockItem::D(d) => {
+                        panic!()
+                    }
+                    BlockItem::S(s) => {
+                        let instructions = self.generate_tacky_statement(s)?;
+                        all_instructions.extend(instructions);
+                    }
+                }
             }
 
             let f1 = Function {
@@ -67,6 +74,9 @@ impl TackyGenerator {
                 let (mut instructions, result_value) = self.generate_tacky_exp(exp)?;
                 instructions.push(Instruction::Return(result_value));
                 Ok(instructions)
+            }
+            _ => {
+                panic!()
             }
         }
     }
@@ -203,6 +213,7 @@ impl TackyGenerator {
                     Ok((instructions1, dst_value))
                 }
             },
+            _ => panic!(),
         }
     }
 }
