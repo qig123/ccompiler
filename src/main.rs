@@ -198,7 +198,7 @@ fn preprocess_and_lex(
     let status = Command::new("gcc")
         .args(["-E", "-P"])
         .arg(input)
-        .args(["-o", preprocessed_output.to_str().unwrap()]) // 使用 to_str
+        .args(["-o", preprocessed_output.to_str().unwrap()])
         .status()
         .map_err(|e| format!("无法执行 gcc: {}", e))?;
 
@@ -300,7 +300,7 @@ mod tests {
     fn test_default_compilation() -> Result<(), String> {
         let cli = Cli {
             source_file: PathBuf::from(r"./tests/program.c"),
-            lex: false,
+            lex: true,
             parse: false,
             tacky: false,
             codegen: true,

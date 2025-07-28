@@ -12,14 +12,23 @@ pub enum TokenType {
     LeftBrace,
     RightBrace,
     Semicolon,
+    Bang,       // !
     Negate,     // -
     Complement, // ~
     Add,        //+
     Mul,        // *
     Div,
     Remainder, // %
+    Greater,
+    Less,
     // two-character
-    Decrement, // --
+    Decrement,    // --
+    And,          // &&
+    Or,           // ||
+    EqualEqual,   // ==
+    BangEqual,    // !=
+    GreaterEqual, // >=
+    LessEqual,    // <=
     // End of File
     Eof,
 }
@@ -58,6 +67,7 @@ impl Lexer {
                         '*' => TokenType::Mul,
                         '/' => TokenType::Div,
                         '%' => TokenType::Remainder,
+
                         _ => unreachable!(),
                     };
                     tokens.push(Token {
@@ -82,6 +92,96 @@ impl Lexer {
                             type_: TokenType::Negate,
                             value: None,
                         });
+                    }
+                }
+                '!' => {
+                    chars.next();
+                    if let Some('=') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token {
+                            lexeme: "!-".to_string(),
+                            type_: TokenType::BangEqual,
+                            value: None,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            lexeme: c.to_string(),
+                            type_: TokenType::Bang,
+                            value: None,
+                        });
+                    }
+                }
+                '>' => {
+                    chars.next();
+                    if let Some('=') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token {
+                            lexeme: ">=".to_string(),
+                            type_: TokenType::GreaterEqual,
+                            value: None,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            lexeme: c.to_string(),
+                            type_: TokenType::Greater,
+                            value: None,
+                        });
+                    }
+                }
+                '<' => {
+                    chars.next();
+                    if let Some('=') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token {
+                            lexeme: "<=".to_string(),
+                            type_: TokenType::LessEqual,
+                            value: None,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            lexeme: c.to_string(),
+                            type_: TokenType::Less,
+                            value: None,
+                        });
+                    }
+                }
+                '&' => {
+                    chars.next();
+                    if let Some('&') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token {
+                            lexeme: "&&".to_string(),
+                            type_: TokenType::And,
+                            value: None,
+                        });
+                    } else {
+                        return Err(format!("Unexpected character: {}", c));
+                    }
+                }
+                '|' => {
+                    chars.next();
+                    if let Some('|') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token {
+                            lexeme: "||".to_string(),
+                            type_: TokenType::Or,
+                            value: None,
+                        });
+                    } else {
+                        return Err(format!("Unexpected character: {}", c));
+                    }
+                }
+                '=' => {
+                    chars.next();
+                    if let Some('=') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token {
+                            lexeme: "==".to_string(),
+                            type_: TokenType::EqualEqual,
+                            value: None,
+                        });
+                    } else {
+                        return Err(format!("Unexpected character: {}", c));
                     }
                 }
                 '0'..='9' => {
