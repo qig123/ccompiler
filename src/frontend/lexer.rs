@@ -6,6 +6,8 @@ pub enum TokenType {
     Int,
     Void,
     Return,
+    If,
+    Else,
     // Single-character tokens
     LeftParen,
     RightParen,
@@ -21,7 +23,10 @@ pub enum TokenType {
     Remainder, // %
     Greater,
     Less,
-    Assignment, //
+    Assignment,   //
+    QuestionMark, // ?
+    Colon,        // :
+
     // two-character
     Decrement,    // --
     And,          // &&
@@ -56,7 +61,7 @@ impl Lexer {
 
         while let Some(&c) = chars.peek() {
             match c {
-                '(' | ')' | '{' | '}' | ';' | '~' | '+' | '*' | '/' | '%' => {
+                '(' | ')' | '{' | '}' | ';' | '~' | '+' | '*' | '/' | '%' | ':' | '?' => {
                     let type_ = match c {
                         '(' => TokenType::LeftParen,
                         ')' => TokenType::RightParen,
@@ -68,7 +73,8 @@ impl Lexer {
                         '*' => TokenType::Mul,
                         '/' => TokenType::Div,
                         '%' => TokenType::Remainder,
-
+                        '?' => TokenType::QuestionMark,
+                        ':' => TokenType::Colon,
                         _ => unreachable!(),
                     };
                     tokens.push(Token {
@@ -259,6 +265,8 @@ impl Lexer {
             "int" => TokenType::Int,
             "void" => TokenType::Void,
             "return" => TokenType::Return,
+            "if" => TokenType::If,
+            "else" => TokenType::Else,
             _ => TokenType::Identifier,
         };
 
