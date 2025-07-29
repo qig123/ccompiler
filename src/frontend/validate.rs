@@ -81,7 +81,26 @@ impl<'a> Validate<'a> {
                 let new_exp = self.reslove_exp(e)?;
                 Ok(Statement::Return(new_exp))
             }
-            _ => panic!(),
+            Statement::If {
+                condition,
+                then_stmt,
+                else_stmt,
+            } => {
+                let new_c = self.reslove_exp(condition)?;
+                let new_left = self.reslove_statement(then_stmt)?;
+                let new_right;
+                if else_stmt.is_none() {
+                    new_right = None;
+                } else {
+                    let s = self.reslove_statement(&else_stmt.clone().unwrap())?;
+                    new_right = Some(Box::new(s));
+                }
+                Ok(Statement::If {
+                    condition: new_c,
+                    then_stmt: Box::new(new_left),
+                    else_stmt: new_right,
+                })
+            }
         }
     }
 
@@ -125,8 +144,20 @@ impl<'a> Validate<'a> {
                 })
             }
             Expression::Constant(i) => Ok(Expression::Constant(*i)),
-            _ => {
-                panic!()
+            Expression::Conditional {
+                condition,
+                left,
+                right,
+            } => {
+                let new_c = self.reslove_exp(condition)?;
+                let new_left = self.reslove_exp(left)?;
+                let new_right = self.reslove_exp(right)?;
+
+                Ok(Expression::Conditional {
+                    condition: Box::new(new_c),
+                    left: Box::new(new_left),
+                    right: Box::new(new_right),
+                })
             }
         }
     }
