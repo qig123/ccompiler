@@ -1,1 +1,4 @@
-int main(void) { return 0 && a; }
+int main(void) {
+  int a = 1 ? 2 : 3;
+  return 100;
+}

@@ -89,7 +89,7 @@ impl Parser {
         Ok(Declaration { name, init })
     }
 
-    /// <statement> ::= "return" <exp> ";" | <exp> ";" | ";"
+    /// <statement> ::= "return" <exp> ";" | <exp> ";" | ";"|"if" "(" <exp> ")" <statement> ["else" <statement>]
     fn parse_statement(&mut self) -> Result<Statement, String> {
         if self.match_token(TokenType::Return) {
             let expr = self.parse_exp(0)?;
@@ -97,6 +97,23 @@ impl Parser {
             Ok(Statement::Return(expr))
         } else if self.match_token(TokenType::Semicolon) {
             Ok(Statement::Null)
+        } else if self.match_token(TokenType::If) {
+            self.consume(TokenType::LeftParen)?;
+            let c = self.parse_exp(0)?;
+            self.consume(TokenType::RightParen)?;
+            let then_stmt = self.parse_statement()?;
+            let suc = self.match_token(TokenType::Else);
+            let else_stmt;
+            if suc {
+                else_stmt = Some(Box::new(self.parse_statement()?));
+            } else {
+                else_stmt = None;
+            }
+            Ok(Statement::If {
+                condition: c,
+                then_stmt: Box::new(then_stmt),
+                else_stmt: else_stmt,
+            })
         } else {
             let expr = self.parse_exp(0)?;
             self.consume(TokenType::Semicolon)?;
@@ -124,12 +141,21 @@ impl Parser {
                 Some(prec) if prec >= min_prec => prec,
                 _ => break, // 不是运算符或优先级太低，结束。
             };
-
-            // 消费掉这个运算符 token。
-            let op_token = self.tokens.next().unwrap();
+            let op_token;
+            let middle_exp;
+            if &next_token.type_ == &TokenType::QuestionMark {
+                op_token = self.tokens.next().unwrap();
+                middle_exp = Some(self.parse_exp(0)?);
+                self.consume(TokenType::Colon)?;
+            } else {
+                op_token = self.tokens.next().unwrap();
+                middle_exp = None;
+            }
 
             // 根据运算符的结合性调整下一次递归的最小优先级。
-            let (is_right_associative, next_min_prec) = if op_token.type_ == TokenType::Assignment {
+            let (is_right_associative, next_min_prec) = if op_token.type_ == TokenType::Assignment
+                || op_token.type_ == TokenType::QuestionMark
+            {
                 (true, op_prec) // 右结合：下一级的最小优先级是 *当前* 优先级。
             } else {
                 (false, op_prec + 1) // 左结合：下一级的最小优先级是 *当前* 优先级 + 1。
@@ -140,10 +166,18 @@ impl Parser {
 
             // 将左右两部分组合成一个新的 `left` 表达式。
             if is_right_associative {
-                left = Expression::Assignment {
-                    left: Box::new(left),
-                    right: Box::new(right),
-                };
+                if op_token.type_ == TokenType::Assignment {
+                    left = Expression::Assignment {
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    };
+                } else {
+                    left = Expression::Conditional {
+                        condition: Box::new(left),
+                        left: Box::new(middle_exp.unwrap()), //must have value
+                        right: Box::new(right),
+                    }
+                }
             } else {
                 // 处理普通的二元运算符。
                 let bin_op = match op_token.type_ {
@@ -219,7 +253,8 @@ impl Parser {
     /// 获取中缀运算符的优先级。如果 token 不是中缀运算符，返回 None。
     fn get_infix_precedence(&self, typ: &TokenType) -> Option<i32> {
         match typ {
-            TokenType::Assignment => Some(10), // 赋值优先级最低
+            TokenType::Assignment => Some(10),
+            TokenType::QuestionMark => Some(15),
             TokenType::Or => Some(20),
             TokenType::And => Some(30),
             TokenType::EqualEqual | TokenType::BangEqual => Some(40),

@@ -81,6 +81,7 @@ impl<'a> TackyGenerator<'a> {
                 let (instructions, _) = self.generate_tacky_exp(e)?;
                 Ok(instructions)
             }
+            _ => panic!(),
         }
     }
 
@@ -229,6 +230,9 @@ impl<'a> TackyGenerator<'a> {
                 Ok((instructions_for_dest, dest_value))
             }
             c_ast::Expression::Var(id) => Ok((Vec::new(), Value::Var(id.clone()))),
+            _ => {
+                panic!()
+            }
         }
     }
 }

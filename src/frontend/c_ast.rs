@@ -29,6 +29,11 @@ pub enum Statement {
     Return(Expression),
     Expression(Expression),
     Null,
+    If {
+        condition: Expression,
+        then_stmt: Box<Statement>,
+        else_stmt: Option<Box<Statement>>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +50,11 @@ pub enum Expression {
     },
     Var(String),
     Assignment {
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
+    Conditional {
+        condition: Box<Expression>,
         left: Box<Expression>,
         right: Box<Expression>,
     },
@@ -197,6 +207,36 @@ impl AstNode for Statement {
                 // 优化: 使用更具描述性的名称
                 printer.writeln("NullStatement(;)").unwrap();
             }
+            Statement::If {
+                condition,
+                then_stmt,
+                else_stmt,
+            } => {
+                printer.writeln("IfStatement").unwrap();
+                printer.indent(); // 整体缩进
+
+                // 1. 打印 Condition 分支
+                printer.writeln("Condition").unwrap();
+                printer.indent();
+                condition.pretty_print(printer);
+                printer.unindent();
+
+                // 2. 打印 Then 分支
+                printer.writeln("Then").unwrap();
+                printer.indent();
+                then_stmt.pretty_print(printer);
+                printer.unindent();
+
+                // 3. 打印 Else 分支 (如果存在)
+                if let Some(else_s) = else_stmt {
+                    printer.writeln("Else").unwrap();
+                    printer.indent();
+                    else_s.pretty_print(printer);
+                    printer.unindent();
+                }
+
+                printer.unindent(); // 恢复整体缩进
+            }
         }
     }
 }
@@ -228,6 +268,33 @@ impl AstNode for Expression {
                 printer.indent();
                 left.pretty_print(printer);
                 right.pretty_print(printer);
+                printer.unindent();
+            }
+            Expression::Conditional {
+                condition,
+                left,
+                right,
+            } => {
+                // 1. 打印节点本身的类型
+                printer.writeln("Conditional(op: '? :')").unwrap();
+                // 2. 增加一级缩进，为所有子节点做准备
+                printer.indent();
+                // 3. 打印 Condition 分支，并为其子树增加额外缩进
+                printer.writeln("Condition").unwrap();
+                printer.indent();
+                condition.pretty_print(printer);
+                printer.unindent();
+                // 4. 打印 Then 分支 (left)，并为其子树增加额外缩进
+                printer.writeln("Then").unwrap();
+                printer.indent();
+                left.pretty_print(printer);
+                printer.unindent();
+                // 5. 打印 Else 分支 (right)，并为其子树增加额外缩进
+                printer.writeln("Else").unwrap();
+                printer.indent();
+                right.pretty_print(printer);
+                printer.unindent();
+                // 6. 恢复到上一级缩进
                 printer.unindent();
             }
         }

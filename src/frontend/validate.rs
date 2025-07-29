@@ -81,6 +81,7 @@ impl<'a> Validate<'a> {
                 let new_exp = self.reslove_exp(e)?;
                 Ok(Statement::Return(new_exp))
             }
+            _ => panic!(),
         }
     }
 
@@ -124,6 +125,9 @@ impl<'a> Validate<'a> {
                 })
             }
             Expression::Constant(i) => Ok(Expression::Constant(*i)),
+            _ => {
+                panic!()
+            }
         }
     }
 }
