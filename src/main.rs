@@ -352,9 +352,9 @@ mod tests {
         let cli = Cli {
             source_file: PathBuf::from(r"./tests/program.c"),
             lex: false,
-            parse: true,
+            parse: false,
             validate: false,
-            tacky: false,
+            tacky: true,
             codegen: false,
             save_assembly: false,
         };

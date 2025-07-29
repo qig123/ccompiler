@@ -81,7 +81,39 @@ impl<'a> TackyGenerator<'a> {
                 let (instructions, _) = self.generate_tacky_exp(e)?;
                 Ok(instructions)
             }
-            _ => panic!(),
+            c_ast::Statement::If {
+                condition,
+                then_stmt,
+                else_stmt,
+            } => {
+                let (mut instructions, c_value) = self.generate_tacky_exp(condition)?;
+                if else_stmt.is_none() {
+                    let label_end = self.name_gen.new_temp_label();
+                    instructions.push(Instruction::JumpIfZero {
+                        condition: c_value,
+                        target: label_end.clone(),
+                    });
+                    let then_ins = self.generate_tacky_statement(then_stmt)?;
+                    instructions.extend(then_ins);
+                    instructions.push(Instruction::Label(label_end.clone()));
+                } else {
+                    let label_else = self.name_gen.new_temp_label();
+                    let label_end = self.name_gen.new_temp_label();
+
+                    instructions.push(Instruction::JumpIfZero {
+                        condition: c_value,
+                        target: label_else.clone(),
+                    });
+                    let then_ins = self.generate_tacky_statement(then_stmt)?;
+                    instructions.extend(then_ins);
+                    instructions.push(Instruction::Jump(label_end.clone()));
+                    instructions.push(Instruction::Label(label_else.clone()));
+                    let else_stmt = self.generate_tacky_statement(&else_stmt.clone().unwrap())?;
+                    instructions.extend(else_stmt);
+                    instructions.push(Instruction::Label(label_end.clone()));
+                }
+                Ok(instructions)
+            }
         }
     }
 
@@ -230,8 +262,37 @@ impl<'a> TackyGenerator<'a> {
                 Ok((instructions_for_dest, dest_value))
             }
             c_ast::Expression::Var(id) => Ok((Vec::new(), Value::Var(id.clone()))),
-            _ => {
-                panic!()
+            c_ast::Expression::Conditional {
+                condition,
+                left,
+                right,
+            } => {
+                let (mut instructions, c_value) = self.generate_tacky_exp(condition)?;
+                let label_e2 = self.name_gen.new_temp_label();
+                instructions.push(Instruction::JumpIfZero {
+                    condition: c_value,
+                    target: label_e2.clone(),
+                });
+                let (instructions_e1, e1_value) = self.generate_tacky_exp(left)?;
+                instructions.extend(instructions_e1);
+                let result_name = self.name_gen.new_temp_var();
+                let result_value = Value::Var(result_name);
+                instructions.push(Instruction::Copy {
+                    src: e1_value,
+                    dst: result_value.clone(),
+                });
+                let label_end = self.name_gen.new_temp_label();
+                instructions.push(Instruction::Jump(label_end.clone()));
+                instructions.push(Instruction::Label(label_e2.clone()));
+                let (instructions_e2, e2_value) = self.generate_tacky_exp(right)?;
+                instructions.extend(instructions_e2);
+                instructions.push(Instruction::Copy {
+                    src: e2_value,
+                    dst: result_value.clone(),
+                });
+                instructions.push(Instruction::Label(label_end.clone()));
+
+                Ok((instructions, result_value))
             }
         }
     }
