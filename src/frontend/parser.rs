@@ -122,87 +122,83 @@ impl Parser {
     }
 
     // --- 表达式解析 (Pratt Parser) ---
-
-    /// 解析表达式的核心函数（Pratt Parser）。
     /// min_prec: 当前上下文的最小优先级。
     fn parse_exp(&mut self, min_prec: i32) -> Result<Expression, String> {
-        // 首先，解析一个前缀表达式（左侧部分），如一个数字、一个变量或一个一元运算。
         let mut left = self.parse_prefix()?;
 
         loop {
-            // 查看下一个 token，看它是否是一个我们关心的中缀运算符。
             let next_token = match self.tokens.peek().cloned() {
                 Some(tok) => tok,
-                None => break, // Token 流结束，正常退出循环。
+                None => break, // Token 流结束
             };
 
-            // 如果下一个 token 不是中缀运算符，或者其优先级低于当前最小优先级，则停止。
+            // 获取中缀运算符的优先级，如果不是运算符或优先级太低，则停止循环。
             let op_prec = match self.get_infix_precedence(&next_token.type_) {
                 Some(prec) if prec >= min_prec => prec,
-                _ => break, // 不是运算符或优先级太低，结束。
-            };
-            let op_token;
-            let middle_exp;
-            if &next_token.type_ == &TokenType::QuestionMark {
-                op_token = self.tokens.next().unwrap();
-                middle_exp = Some(self.parse_exp(0)?);
-                self.consume(TokenType::Colon)?;
-            } else {
-                op_token = self.tokens.next().unwrap();
-                middle_exp = None;
-            }
-
-            // 根据运算符的结合性调整下一次递归的最小优先级。
-            let (is_right_associative, next_min_prec) = if op_token.type_ == TokenType::Assignment
-                || op_token.type_ == TokenType::QuestionMark
-            {
-                (true, op_prec) // 右结合：下一级的最小优先级是 *当前* 优先级。
-            } else {
-                (false, op_prec + 1) // 左结合：下一级的最小优先级是 *当前* 优先级 + 1。
+                _ => break,
             };
 
-            // 递归解析右侧的表达式。
-            let right = self.parse_exp(next_min_prec)?;
+            // 消耗掉运算符 token
+            let op_token = self.tokens.next().unwrap();
 
-            // 将左右两部分组合成一个新的 `left` 表达式。
-            if is_right_associative {
-                if op_token.type_ == TokenType::Assignment {
-                    left = Expression::Assignment {
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    };
-                } else {
-                    left = Expression::Conditional {
+            left = match op_token.type_ {
+                // 特殊情况：三元运算符
+                TokenType::QuestionMark => {
+                    // 'left' 是我们的 condition
+                    // 解析 then 分支
+                    let then_exp = self.parse_exp(0)?; // 在 '?' 和 ':' 之间，优先级重置
+                    // 消耗 ':'
+                    self.consume(TokenType::Colon)?;
+                    // 解析 else 分支。三元运算是右结合的，所以右侧的优先级是 op_prec
+                    let else_exp = self.parse_exp(op_prec)?;
+
+                    Expression::Conditional {
                         condition: Box::new(left),
-                        left: Box::new(middle_exp.unwrap()), //must have value
+                        left: Box::new(then_exp),
+                        right: Box::new(else_exp),
+                    }
+                }
+
+                // 特殊情况：赋值运算符 (右结合)
+                TokenType::Assignment => {
+                    // 右结合运算符的右侧表达式应该以其自身的优先级来解析
+                    let right = self.parse_exp(op_prec)?;
+                    Expression::Assignment {
+                        left: Box::new(left),
                         right: Box::new(right),
                     }
                 }
-            } else {
-                // 处理普通的二元运算符。
-                let bin_op = match op_token.type_ {
-                    TokenType::Add => BinaryOp::Add,
-                    TokenType::Negate => BinaryOp::Subtract,
-                    TokenType::Mul => BinaryOp::Multiply,
-                    TokenType::Div => BinaryOp::Divide,
-                    TokenType::Remainder => BinaryOp::Remainder,
-                    TokenType::And => BinaryOp::And,
-                    TokenType::Or => BinaryOp::Or,
-                    TokenType::BangEqual => BinaryOp::BangEqual,
-                    TokenType::EqualEqual => BinaryOp::EqualEqual,
-                    TokenType::Greater => BinaryOp::Greater,
-                    TokenType::GreaterEqual => BinaryOp::GreaterEqual,
-                    TokenType::Less => BinaryOp::Less,
-                    TokenType::LessEqual => BinaryOp::LessEqual,
-                    _ => unreachable!("已在 get_infix_precedence 中过滤"),
-                };
-                left = Expression::Binary {
-                    op: bin_op,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                };
-            }
+
+                // 通用情况：所有左结合的二元运算符
+                _ => {
+                    let bin_op = match op_token.type_ {
+                        TokenType::Add => BinaryOp::Add,
+                        TokenType::Negate => BinaryOp::Subtract, // 中缀 '-'
+                        TokenType::Mul => BinaryOp::Multiply,
+                        TokenType::Div => BinaryOp::Divide,
+                        TokenType::Remainder => BinaryOp::Remainder,
+                        TokenType::And => BinaryOp::And,
+                        TokenType::Or => BinaryOp::Or,
+                        TokenType::BangEqual => BinaryOp::BangEqual,
+                        TokenType::EqualEqual => BinaryOp::EqualEqual,
+                        TokenType::Greater => BinaryOp::Greater,
+                        TokenType::GreaterEqual => BinaryOp::GreaterEqual,
+                        TokenType::Less => BinaryOp::Less,
+                        TokenType::LessEqual => BinaryOp::LessEqual,
+                        _ => unreachable!("已在 get_infix_precedence 中过滤"),
+                    };
+
+                    // 左结合运算符的右侧表达式优先级要高一级
+                    let right = self.parse_exp(op_prec + 1)?;
+                    Expression::Binary {
+                        op: bin_op,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    }
+                }
+            };
         }
+
         Ok(left)
     }
 
