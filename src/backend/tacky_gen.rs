@@ -86,31 +86,67 @@ impl<'a> TackyGenerator<'a> {
                 then_stmt,
                 else_stmt,
             } => {
-                let (mut instructions, c_value) = self.generate_tacky_exp(condition)?;
-                if else_stmt.is_none() {
-                    let label_end = self.name_gen.new_temp_label();
-                    instructions.push(Instruction::JumpIfZero {
-                        condition: c_value,
-                        target: label_end.clone(),
-                    });
-                    let then_ins = self.generate_tacky_statement(then_stmt)?;
-                    instructions.extend(then_ins);
-                    instructions.push(Instruction::Label(label_end.clone()));
-                } else {
-                    let label_else = self.name_gen.new_temp_label();
-                    let label_end = self.name_gen.new_temp_label();
+                // 策略：统一处理公共部分（条件），然后根据是否存在 else 分支来构建不同的控制流。
+                // 同样严格遵循 C 的求值顺序。
 
-                    instructions.push(Instruction::JumpIfZero {
-                        condition: c_value,
-                        target: label_else.clone(),
-                    });
-                    let then_ins = self.generate_tacky_statement(then_stmt)?;
-                    instructions.extend(then_ins);
-                    instructions.push(Instruction::Jump(label_end.clone()));
-                    instructions.push(Instruction::Label(label_else.clone()));
-                    let else_stmt = self.generate_tacky_statement(&else_stmt.clone().unwrap())?;
-                    instructions.extend(else_stmt);
-                    instructions.push(Instruction::Label(label_end.clone()));
+                let mut instructions = Vec::new();
+
+                // --- 1. 条件部分 (公共逻辑) ---
+                // 首先，且只生成并执行【条件】表达式的指令。
+                let (cond_instrs, cond_val) = self.generate_tacky_exp(condition)?;
+                instructions.extend(cond_instrs);
+
+                // --- 2. 根据是否存在 else 分支，构建不同的控制流 ---
+                match else_stmt {
+                    // Case 1: if (condition) { then_stmt }
+                    None => {
+                        // 只需要一个标签，用于跳过 then_stmt。
+                        let end_label = self.name_gen.new_temp_label();
+
+                        // 如果条件为假(0)，则跳过整个 then 块。
+                        instructions.push(Instruction::JumpIfZero {
+                            condition: cond_val,
+                            target: end_label.clone(),
+                        });
+
+                        // 生成并添加 then 块的指令。
+                        let then_instrs = self.generate_tacky_statement(then_stmt)?;
+                        instructions.extend(then_instrs);
+
+                        // 放置结束标签。
+                        instructions.push(Instruction::Label(end_label));
+                    }
+
+                    // Case 2: if (condition) { then_stmt } else { else_stmt }
+                    Some(else_s) => {
+                        // 需要两个标签：一个用于跳转到 else，一个用于跳到结尾。
+                        let else_label = self.name_gen.new_temp_label();
+                        let end_label = self.name_gen.new_temp_label();
+
+                        // 如果条件为假(0)，则跳转到 else 块。
+                        instructions.push(Instruction::JumpIfZero {
+                            condition: cond_val,
+                            target: else_label.clone(),
+                        });
+
+                        // [Then 分支]
+                        // 生成并添加 then 块的指令。
+                        let then_instrs = self.generate_tacky_statement(then_stmt)?;
+                        instructions.extend(then_instrs);
+                        // then 块执行完毕后，必须无条件跳过 else 块。
+                        instructions.push(Instruction::Jump(end_label.clone()));
+
+                        // [Else 分支]
+                        // 放置 else 块的入口标签。
+                        instructions.push(Instruction::Label(else_label));
+                        // 生成并添加 else 块的指令。
+                        let else_instrs = self.generate_tacky_statement(else_s)?;
+                        instructions.extend(else_instrs);
+
+                        // [结尾]
+                        // 放置共同的结束标签。
+                        instructions.push(Instruction::Label(end_label));
+                    }
                 }
                 Ok(instructions)
             }
@@ -267,32 +303,59 @@ impl<'a> TackyGenerator<'a> {
                 left,
                 right,
             } => {
-                let (mut instructions, c_value) = self.generate_tacky_exp(condition)?;
-                let label_e2 = self.name_gen.new_temp_label();
-                instructions.push(Instruction::JumpIfZero {
-                    condition: c_value,
-                    target: label_e2.clone(),
-                });
-                let (instructions_e1, e1_value) = self.generate_tacky_exp(left)?;
-                instructions.extend(instructions_e1);
-                let result_name = self.name_gen.new_temp_var();
-                let result_value = Value::Var(result_name);
-                instructions.push(Instruction::Copy {
-                    src: e1_value,
-                    dst: result_value.clone(),
-                });
-                let label_end = self.name_gen.new_temp_label();
-                instructions.push(Instruction::Jump(label_end.clone()));
-                instructions.push(Instruction::Label(label_e2.clone()));
-                let (instructions_e2, e2_value) = self.generate_tacky_exp(right)?;
-                instructions.extend(instructions_e2);
-                instructions.push(Instruction::Copy {
-                    src: e2_value,
-                    dst: result_value.clone(),
-                });
-                instructions.push(Instruction::Label(label_end.clone()));
+                // 策略：遵循 C 语言的短路求值规则，按执行顺序生成指令，
+                // 同时通过代码结构化来提高可读性。
 
-                Ok((instructions, result_value))
+                // --- 1. 准备阶段 ---
+                // 创建整个表达式所需的共享资源：最终结果的临时变量和跳转标签。
+                // 这部分可以安全地提前完成。
+                let result_val = Value::Var(self.name_gen.new_temp_var());
+                let false_label = self.name_gen.new_temp_label();
+                let end_label = self.name_gen.new_temp_label();
+
+                let mut instructions = Vec::new();
+
+                // --- 2. 条件部分 ---
+                // 首先，且只生成并执行【条件】表达式的指令。
+                let (cond_instrs, cond_val) = self.generate_tacky_exp(condition)?;
+                instructions.extend(cond_instrs);
+
+                // 根据条件结果进行跳转。如果为假(0)，则跳过 "then" 分支。
+                instructions.push(Instruction::JumpIfZero {
+                    condition: cond_val,
+                    target: false_label.clone(),
+                });
+
+                // --- 3. Then 分支 (当条件为真时执行) ---
+                // 只有在确定要执行 "then" 分支时，才为其生成指令。
+                // 这保证了 `left` 表达式的副作用只在条件为真时发生。
+                let (then_instrs, then_val) = self.generate_tacky_exp(left)?;
+                instructions.extend(then_instrs);
+                instructions.push(Instruction::Copy {
+                    src: then_val,
+                    dst: result_val.clone(),
+                });
+                // "then" 分支执行完毕后，必须无条件跳过 "else" 分支。
+                instructions.push(Instruction::Jump(end_label.clone()));
+
+                // --- 4. Else 分支 (当条件为假时执行) ---
+                // 放置 "else" 分支的入口标签。
+                instructions.push(Instruction::Label(false_label));
+
+                // 只有在确定要执行 "else" 分支时，才为其生成指令。
+                // 这保证了 `right` 表达式的副作用只在条件为假时发生。
+                let (else_instrs, else_val) = self.generate_tacky_exp(right)?;
+                instructions.extend(else_instrs);
+                instructions.push(Instruction::Copy {
+                    src: else_val,
+                    dst: result_val.clone(),
+                });
+
+                // --- 5. 结尾 ---
+                // 放置 "then" 和 "else" 分支汇合的最终标签。
+                instructions.push(Instruction::Label(end_label));
+
+                Ok((instructions, result_val))
             }
         }
     }
