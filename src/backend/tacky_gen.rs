@@ -24,16 +24,18 @@ impl<'a> TackyGenerator<'a> {
             let mut all_instructions = Vec::new();
             for statement in &item.body {
                 match statement {
-                    BlockItem::D(_d) => {
-                        panic!()
+                    BlockItem::D(d) => {
+                        let ins = self.generate_tacky_decl(d)?;
+                        all_instructions.extend(ins);
                     }
                     BlockItem::S(s) => {
                         let instructions = self.generate_tacky_statement(s)?;
-                        all_instructions.extend(instructions);
+                        all_instructions.extend(instructions)
                     }
                 }
             }
-
+            //在每个函数体的末尾添加一条额外的 TACKY 指令：Return(Constant(0))
+            all_instructions.push(Instruction::Return(Value::Constant(0)));
             let f1 = Function {
                 name: item.name.clone(),
                 body: all_instructions,
@@ -41,6 +43,23 @@ impl<'a> TackyGenerator<'a> {
             fs.push(f1);
         }
         Ok(Program { functions: fs })
+    }
+    fn generate_tacky_decl(&mut self, d: &c_ast::Declaration) -> Result<Vec<Instruction>, String> {
+        match &d.init {
+            None => {
+                let v: Vec<Instruction> = Vec::new();
+                Ok(v)
+            }
+            Some(e) => {
+                let (mut instructions, result_value) = self.generate_tacky_exp(&e)?;
+                let ins_c = Instruction::Copy {
+                    src: result_value,
+                    dst: Value::Var(d.name.clone()),
+                };
+                instructions.push(ins_c);
+                Ok(instructions)
+            }
+        }
     }
 
     fn generate_tacky_statement(
@@ -53,8 +72,14 @@ impl<'a> TackyGenerator<'a> {
                 instructions.push(Instruction::Return(result_value));
                 Ok(instructions)
             }
-            _ => {
-                panic!()
+            c_ast::Statement::Null => {
+                let v: Vec<Instruction> = Vec::new();
+                Ok(v)
+            }
+            c_ast::Statement::Expression(e) => {
+                //丢弃表达式的值
+                let (instructions, _) = self.generate_tacky_exp(e)?;
+                Ok(instructions)
             }
         }
     }
@@ -191,7 +216,19 @@ impl<'a> TackyGenerator<'a> {
                     Ok((instructions1, dst_value))
                 }
             },
-            _ => panic!(),
+            c_ast::Expression::Assignment { left, right } => {
+                //  处理左侧表达式，得到目标位置,目前只能是Var
+                let (mut instructions_for_dest, dest_value) = self.generate_tacky_exp(left)?;
+                let (instructions_for_src, src_value) = self.generate_tacky_exp(right)?;
+                instructions_for_dest.extend(instructions_for_src);
+                let copy_ins = Instruction::Copy {
+                    src: src_value,
+                    dst: dest_value.clone(),
+                };
+                instructions_for_dest.push(copy_ins);
+                Ok((instructions_for_dest, dest_value))
+            }
+            c_ast::Expression::Var(id) => Ok((Vec::new(), Value::Var(id.clone()))),
         }
     }
 }
