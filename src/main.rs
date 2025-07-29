@@ -14,6 +14,7 @@ use crate::common::PrettyPrinter;
 use crate::frontend::c_ast::Program;
 use crate::frontend::lexer;
 use crate::frontend::parser;
+use crate::frontend::validate::Validate;
 
 mod backend;
 mod common;
@@ -62,6 +63,34 @@ impl Drop for FileJanitor {
         }
     }
 }
+//全局计数器
+#[derive(Debug, Default)]
+pub struct UniqueNameGenerator {
+    counter: u32,
+}
+impl UniqueNameGenerator {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    //tacky ir
+    pub fn new_temp_var(&mut self) -> String {
+        let current_value = self.counter;
+        self.counter += 1;
+        format!("tmp{}", current_value)
+    }
+    //tacky ir
+    pub fn new_temp_label(&mut self) -> String {
+        let current_value = self.counter;
+        self.counter += 1;
+        format!("label{}", current_value)
+    }
+    // variable reslove,保证是 invalidate id in c language
+    pub fn new_variable_name(&mut self, name: String) -> String {
+        let current_value = self.counter;
+        self.counter += 1;
+        format!("{}.{}", name, current_value)
+    }
+}
 
 /// 一个C语言编译器驱动程序
 #[derive(Parser, Debug)]
@@ -77,6 +106,9 @@ struct Cli {
     /// 运行词法分析器和语法分析器，然后停止
     #[arg(long)]
     parse: bool,
+    //语义fenx
+    #[arg(long)]
+    validate: bool,
 
     // 生成ir
     #[arg(long)]
@@ -130,6 +162,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
         assembly_path.clone(),
         output_exe_path.clone(),
     ]));
+    let mut name_gen = UniqueNameGenerator::new();
 
     println!("\n--- 开始编译: {} ---", input_path.display());
 
@@ -148,9 +181,15 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
         println!("\n--parse: 语法分析完成，程序停止。");
         return Ok(());
     }
+    // 步骤 C -> (3)
+    let new_ast = validate(&ast, &mut name_gen)?;
+    if cli.validate {
+        println!("\n--validate: 语义分析完成, 程序停止。");
+        return Ok(());
+    }
 
     // 步骤 C -> (3)
-    let ir_ast = gen_ir(&ast)?;
+    let ir_ast = gen_ir(&new_ast, &mut name_gen)?;
     if cli.tacky {
         println!("\n--tacky: IR 生成完成, 程序停止。");
         return Ok(());
@@ -225,10 +264,23 @@ fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
     program.pretty_print(&mut printer);
     Ok(program)
 }
+fn validate(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, String> {
+    println!("(4) 正在进行 语义分析");
+    let mut v = Validate::new(g);
+    let ast = v.reslove_prgram(c_ast)?;
+    println!("   ✅ 语义分析完成,打印 AST:");
+    let mut stdout = io::stdout();
+    let mut printer = PrettyPrinter::new(&mut stdout);
+    ast.pretty_print(&mut printer);
+    Ok(ast)
+}
 
-fn gen_ir(c_ast: &Program) -> Result<crate::backend::tacky_ir::Program, String> {
+fn gen_ir(
+    c_ast: &Program,
+    g: &mut UniqueNameGenerator,
+) -> Result<crate::backend::tacky_ir::Program, String> {
     println!("(4) 正在生成 Tacky IR...");
-    let mut ir_gen = backend::tacky_gen::TackyGenerator::new();
+    let mut ir_gen = backend::tacky_gen::TackyGenerator::new(g);
     let ir_ast = ir_gen.generate_tacky(c_ast)?;
     println!("   ✅ IR 生成完成。打印 Tacky IR:");
     let mut stdout = io::stdout();
@@ -300,7 +352,8 @@ mod tests {
         let cli = Cli {
             source_file: PathBuf::from(r"./tests/program.c"),
             lex: false,
-            parse: true,
+            parse: false,
+            validate: true,
             tacky: false,
             codegen: false,
             save_assembly: false,

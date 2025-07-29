@@ -1,5 +1,1 @@
-int main(void) {
-  a = 1 + 2;
-  int a;
-  return a;
-}
+int main(void) { return 0 && a; }

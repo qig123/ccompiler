@@ -1,30 +1,10 @@
+use crate::UniqueNameGenerator;
 use crate::backend::tacky_ir::*;
 use crate::frontend::c_ast::{self, BlockItem};
 
-#[derive(Debug, Default)]
-pub struct UniqueNameGenerator {
-    counter: u32,
-}
-
-impl UniqueNameGenerator {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn new_temp_var(&mut self) -> String {
-        let current_value = self.counter;
-        self.counter += 1;
-        format!("tmp{}", current_value)
-    }
-    pub fn new_temp_label(&mut self) -> String {
-        let current_value = self.counter;
-        self.counter += 1;
-        format!("label{}", current_value)
-    }
-}
-
 #[derive(Debug)]
-pub struct TackyGenerator {
-    name_gen: UniqueNameGenerator,
+pub struct TackyGenerator<'a> {
+    name_gen: &'a mut UniqueNameGenerator,
 }
 
 // A helper enum to make the short-circuiting logic more readable.
@@ -33,11 +13,9 @@ enum ShortCircuitJump {
     OnNotZero,
 }
 
-impl TackyGenerator {
-    pub fn new() -> Self {
-        TackyGenerator {
-            name_gen: UniqueNameGenerator::new(),
-        }
+impl<'a> TackyGenerator<'a> {
+    pub fn new(g: &'a mut UniqueNameGenerator) -> Self {
+        TackyGenerator { name_gen: g }
     }
 
     pub fn generate_tacky(&mut self, c_ast: &c_ast::Program) -> Result<Program, String> {

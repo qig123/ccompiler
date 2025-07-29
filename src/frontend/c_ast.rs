@@ -3,35 +3,35 @@
 use crate::common::{AstNode, PrettyPrinter};
 use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Program {
     pub functions: Vec<Function>,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
     pub parameters: Vec<String>,
     pub body: Vec<BlockItem>,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BlockItem {
     S(Statement),
     D(Declaration),
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Declaration {
     pub name: String,
     pub init: Option<Box<Expression>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Return(Expression),
     Expression(Expression),
     Null,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Constant(i64),
     Unary {
@@ -50,14 +50,14 @@ pub enum Expression {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Complement,
     Negate,
     Not,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BinaryOp {
     Add,
     Subtract,
