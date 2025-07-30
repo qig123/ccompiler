@@ -8,6 +8,11 @@ pub enum TokenType {
     Return,
     If,
     Else,
+    Do,
+    While,
+    For,
+    Continue,
+    Break,
     // Single-character tokens
     LeftParen,
     RightParen,
@@ -267,6 +272,11 @@ impl Lexer {
             "return" => TokenType::Return,
             "if" => TokenType::If,
             "else" => TokenType::Else,
+            "do" => TokenType::Do,
+            "while" => TokenType::While,
+            "for" => TokenType::For,
+            "break" => TokenType::Break,
+            "continue" => TokenType::Continue,
             _ => TokenType::Identifier,
         };
 
