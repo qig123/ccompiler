@@ -31,6 +31,7 @@ pub enum TokenType {
     Assignment,   //
     QuestionMark, // ?
     Colon,        // :
+    Comma,        //,
 
     // two-character
     Decrement,    // --
@@ -66,7 +67,7 @@ impl Lexer {
 
         while let Some(&c) = chars.peek() {
             match c {
-                '(' | ')' | '{' | '}' | ';' | '~' | '+' | '*' | '/' | '%' | ':' | '?' => {
+                '(' | ')' | '{' | '}' | ';' | '~' | '+' | '*' | '/' | '%' | ':' | '?' | ',' => {
                     let type_ = match c {
                         '(' => TokenType::LeftParen,
                         ')' => TokenType::RightParen,
@@ -80,6 +81,7 @@ impl Lexer {
                         '%' => TokenType::Remainder,
                         '?' => TokenType::QuestionMark,
                         ':' => TokenType::Colon,
+                        ',' => TokenType::Comma,
                         _ => unreachable!(),
                     };
                     tokens.push(Token {
