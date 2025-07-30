@@ -150,6 +150,7 @@ impl Parser {
             Ok(Statement::While {
                 condition: c,
                 body: Box::new(body),
+                label: None,
             })
         } else if self.match_token(TokenType::Do) {
             let body = self.parse_statement()?;
@@ -161,6 +162,7 @@ impl Parser {
             Ok(Statement::DoWhile {
                 body: Box::new(body),
                 condition: c,
+                label: None,
             })
         } else if self.match_token(TokenType::For) {
             self.consume(TokenType::LeftParen)?;
@@ -186,6 +188,7 @@ impl Parser {
                 condition: condition,
                 post: post,
                 body: Box::new(body),
+                label: None,
             })
         } else {
             let expr = self.parse_exp(0)?;

@@ -46,16 +46,19 @@ pub enum Statement {
     While {
         condition: Expression,
         body: Box<Statement>,
+        label: Option<String>,
     },
     DoWhile {
         body: Box<Statement>,
         condition: Expression,
+        label: Option<String>,
     },
     For {
         init: ForInit,
         condition: Option<Expression>,
         post: Option<Expression>,
         body: Box<Statement>,
+        label: Option<String>,
     },
 }
 
@@ -277,14 +280,25 @@ impl AstNode for Statement {
                 b.pretty_print(printer);
                 printer.unindent();
             }
-            Statement::Break(_) => {
-                printer.writeln("BreakStatement").unwrap();
+            Statement::Break(label) => {
+                printer
+                    .writeln(&format!("BreakStatement(->{})", label))
+                    .unwrap();
             }
-            Statement::Continue(_) => {
-                printer.writeln("ContinueStatement").unwrap();
+            Statement::Continue(label) => {
+                printer
+                    .writeln(&format!("ContinueStatement(->{})", label))
+                    .unwrap();
             }
-            Statement::While { condition, body } => {
-                printer.writeln("WhileStatement").unwrap();
+            Statement::While {
+                condition,
+                body,
+                label,
+            } => {
+                let label_str = label.as_deref().unwrap_or("unlabeled");
+                printer
+                    .writeln(&format!("WhileStatement(label:{})", label_str))
+                    .unwrap();
                 printer.indent();
 
                 printer.writeln("Condition").unwrap();
@@ -299,8 +313,15 @@ impl AstNode for Statement {
 
                 printer.unindent();
             }
-            Statement::DoWhile { body, condition } => {
-                printer.writeln("DoWhileStatement").unwrap();
+            Statement::DoWhile {
+                body,
+                condition,
+                label,
+            } => {
+                let label_str = label.as_deref().unwrap_or("unlabeled");
+                printer
+                    .writeln(&format!("DoWhileStatement(label:{})", label_str))
+                    .unwrap();
                 printer.indent();
 
                 printer.writeln("Body").unwrap();
@@ -320,8 +341,12 @@ impl AstNode for Statement {
                 condition,
                 post,
                 body,
+                label,
             } => {
-                printer.writeln("ForStatement").unwrap();
+                let label_str = label.as_deref().unwrap_or("unlabeled");
+                printer
+                    .writeln(&format!("ForStatement(label:{})", label_str))
+                    .unwrap();
                 printer.indent();
 
                 printer.writeln("Init").unwrap();

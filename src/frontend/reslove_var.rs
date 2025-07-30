@@ -1,18 +1,20 @@
+//src/frontend/reslove_var.rs
 use std::collections::HashMap;
 
 use crate::{
     UniqueNameGenerator,
-    frontend::c_ast::{Block, BlockItem, Declaration, Expression, Function, Program, Statement},
+    frontend::c_ast::{
+        Block, BlockItem, Declaration, Expression, ForInit, Function, Program, Statement,
+    },
 };
 
-//src/frontend/validate.rs
-pub struct Validate<'a> {
+pub struct ResloveVar<'a> {
     variable_map: Vec<HashMap<String, String>>, //env chain
     name_gen: &'a mut UniqueNameGenerator,
 }
-impl<'a> Validate<'a> {
+impl<'a> ResloveVar<'a> {
     pub fn new(g: &'a mut UniqueNameGenerator) -> Self {
-        Validate {
+        ResloveVar {
             variable_map: Vec::new(),
             name_gen: g,
         }
@@ -112,7 +114,78 @@ impl<'a> Validate<'a> {
                 let b = self.reslove_block(b)?;
                 Ok(Statement::Compound(b))
             }
-            _ => panic!(),
+            Statement::Break(n) => Ok(Statement::Break(n.clone())),
+            Statement::Continue(n) => Ok(Statement::Continue(n.clone())),
+            Statement::While {
+                condition, body, ..
+            } => {
+                let new_c = self.reslove_exp(condition)?;
+                let new_body = self.reslove_statement(body)?;
+                Ok(Statement::While {
+                    condition: new_c,
+                    body: Box::new(new_body),
+                    label: None,
+                })
+            }
+            Statement::DoWhile {
+                body, condition, ..
+            } => {
+                let new_c = self.reslove_exp(condition)?;
+                let new_body = self.reslove_statement(body)?;
+                Ok(Statement::DoWhile {
+                    body: Box::new(new_body),
+                    condition: new_c,
+                    label: None,
+                })
+            }
+            Statement::For {
+                init,
+                condition,
+                post,
+                body,
+                ..
+            } => {
+                let env_for = HashMap::new();
+                self.variable_map.push(env_for);
+                let new_init = self.reslove_forinit(init)?;
+                let new_c;
+                if let Some(item_c) = condition {
+                    new_c = Some(self.reslove_exp(item_c)?);
+                } else {
+                    new_c = None;
+                }
+                let new_post;
+                if let Some(item_post) = post {
+                    new_post = Some(self.reslove_exp(item_post)?);
+                } else {
+                    new_post = None;
+                }
+                let new_body = self.reslove_statement(&body)?;
+                self.variable_map.pop();
+                Ok(Statement::For {
+                    init: new_init,
+                    condition: new_c,
+                    post: new_post,
+                    body: Box::new(new_body),
+                    label: None,
+                })
+            }
+        }
+    }
+    fn reslove_forinit(&mut self, init: &ForInit) -> Result<ForInit, String> {
+        match init {
+            ForInit::InitDecl(d) => {
+                let new_d = self.reslove_dec(d)?;
+                Ok(ForInit::InitDecl(new_d))
+            }
+            ForInit::InitExp(e) => {
+                if let Some(item) = e {
+                    let new_e = self.reslove_exp(item)?;
+                    Ok(ForInit::InitExp(Some(new_e)))
+                } else {
+                    Ok(ForInit::InitExp(None))
+                }
+            }
         }
     }
 

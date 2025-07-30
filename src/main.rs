@@ -13,8 +13,9 @@ use crate::common::AstNode;
 use crate::common::PrettyPrinter;
 use crate::frontend::c_ast::Program;
 use crate::frontend::lexer;
+use crate::frontend::loop_labeling::LoopLabeling;
 use crate::frontend::parser;
-use crate::frontend::validate::Validate;
+use crate::frontend::reslove_var::ResloveVar;
 
 mod backend;
 mod common;
@@ -79,10 +80,10 @@ impl UniqueNameGenerator {
         format!("tmp{}", current_value)
     }
     //tacky ir
-    pub fn new_temp_label(&mut self) -> String {
+    pub fn new_temp_label(&mut self, name: &str) -> String {
         let current_value = self.counter;
         self.counter += 1;
-        format!("label{}", current_value)
+        format!("{}.{}", name, current_value)
     }
     // variable reslove,保证是 invalidate id in c language
     pub fn new_variable_name(&mut self, name: String) -> String {
@@ -182,14 +183,15 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
         return Ok(());
     }
     // 步骤 C -> (3)
-    let new_ast = validate(&ast, &mut name_gen)?;
+    let new_ast = reslove_var(&ast, &mut name_gen)?;
+    let new_ast2 = loop_labeling(&new_ast, &mut name_gen)?;
     if cli.validate {
         println!("\n--validate: 语义分析完成, 程序停止。");
         return Ok(());
     }
 
     // 步骤 C -> (3)
-    let ir_ast = gen_ir(&new_ast, &mut name_gen)?;
+    let ir_ast = gen_ir(&new_ast2, &mut name_gen)?;
     if cli.tacky {
         println!("\n--tacky: IR 生成完成, 程序停止。");
         return Ok(());
@@ -264,10 +266,20 @@ fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
     program.pretty_print(&mut printer);
     Ok(program)
 }
-fn validate(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, String> {
+fn reslove_var(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, String> {
     println!("(4) 正在进行 语义分析");
-    let mut v = Validate::new(g);
+    let mut v = ResloveVar::new(g);
     let ast = v.reslove_prgram(c_ast)?;
+    println!("   ✅ 语义分析完成,打印 AST:");
+    let mut stdout = io::stdout();
+    let mut printer = PrettyPrinter::new(&mut stdout);
+    ast.pretty_print(&mut printer);
+    Ok(ast)
+}
+fn loop_labeling(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, String> {
+    println!("(4) 正在进行 语义分析");
+    let mut v = LoopLabeling::new(g);
+    let ast = v.label_loops_in_program(c_ast)?;
     println!("   ✅ 语义分析完成,打印 AST:");
     let mut stdout = io::stdout();
     let mut printer = PrettyPrinter::new(&mut stdout);
@@ -352,9 +364,9 @@ mod tests {
         let cli = Cli {
             source_file: PathBuf::from(r"./tests/program.c"),
             lex: false,
-            parse: true,
-            validate: false,
-            tacky: true,
+            parse: false,
+            validate: true,
+            tacky: false,
             codegen: false,
             save_assembly: false,
         };

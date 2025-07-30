@@ -108,7 +108,7 @@ impl<'a> TackyGenerator<'a> {
                     // Case 1: if (condition) { then_stmt }
                     None => {
                         // 只需要一个标签，用于跳过 then_stmt。
-                        let end_label = self.name_gen.new_temp_label();
+                        let end_label = self.name_gen.new_temp_label("end");
 
                         // 如果条件为假(0)，则跳过整个 then 块。
                         instructions.push(Instruction::JumpIfZero {
@@ -127,8 +127,8 @@ impl<'a> TackyGenerator<'a> {
                     // Case 2: if (condition) { then_stmt } else { else_stmt }
                     Some(else_s) => {
                         // 需要两个标签：一个用于跳转到 else，一个用于跳到结尾。
-                        let else_label = self.name_gen.new_temp_label();
-                        let end_label = self.name_gen.new_temp_label();
+                        let else_label = self.name_gen.new_temp_label("else");
+                        let end_label = self.name_gen.new_temp_label("end");
 
                         // 如果条件为假(0)，则跳转到 else 块。
                         instructions.push(Instruction::JumpIfZero {
@@ -180,8 +180,8 @@ impl<'a> TackyGenerator<'a> {
         let (mut instructions, v1) = self.generate_tacky_exp(left)?;
 
         // 2. Generate labels
-        let short_circuit_label = self.name_gen.new_temp_label();
-        let end_label = self.name_gen.new_temp_label();
+        let short_circuit_label = self.name_gen.new_temp_label("");
+        let end_label = self.name_gen.new_temp_label("end");
 
         // 3. Helper function to create the correct jump instruction
         let make_jump = |condition, target| match jump_type {
@@ -318,8 +318,8 @@ impl<'a> TackyGenerator<'a> {
                 // 创建整个表达式所需的共享资源：最终结果的临时变量和跳转标签。
                 // 这部分可以安全地提前完成。
                 let result_val = Value::Var(self.name_gen.new_temp_var());
-                let false_label = self.name_gen.new_temp_label();
-                let end_label = self.name_gen.new_temp_label();
+                let false_label = self.name_gen.new_temp_label("false");
+                let end_label = self.name_gen.new_temp_label("end");
 
                 let mut instructions = Vec::new();
 
