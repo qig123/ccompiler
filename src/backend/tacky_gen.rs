@@ -1,6 +1,8 @@
 use crate::UniqueNameGenerator;
 use crate::backend::tacky_ir::*;
 use crate::frontend::c_ast::{self, BlockItem};
+const CONTINUE_LABEL: &str = "continue.";
+const BREAK_LABEL: &str = "break.";
 
 #[derive(Debug)]
 pub struct TackyGenerator<'a> {
@@ -64,6 +66,19 @@ impl<'a> TackyGenerator<'a> {
                 };
                 instructions.push(ins_c);
                 Ok(instructions)
+            }
+        }
+    }
+    fn generate_forinit(&mut self, init: &c_ast::ForInit) -> Result<Vec<Instruction>, String> {
+        match init {
+            c_ast::ForInit::InitDecl(d) => Ok(self.generate_tacky_decl(d)?),
+            c_ast::ForInit::InitExp(e) => {
+                if let Some(item) = e {
+                    let (ins, _) = self.generate_tacky_exp(item)?; //？
+                    Ok(ins)
+                } else {
+                    Ok(Vec::new())
+                }
             }
         }
     }
@@ -157,7 +172,89 @@ impl<'a> TackyGenerator<'a> {
                 }
                 Ok(instructions)
             }
-            _ => panic!(),
+            c_ast::Statement::Break(n) => {
+                Ok(vec![Instruction::Jump(format!("{}{}", BREAK_LABEL, n))])
+            }
+            c_ast::Statement::Continue(n) => {
+                Ok(vec![Instruction::Jump(format!("{}{}", CONTINUE_LABEL, n))])
+            }
+            c_ast::Statement::DoWhile {
+                body,
+                condition,
+                label,
+            } => {
+                let start_label = self.name_gen.new_label("start");
+                let continue_label = format!("{}{}", CONTINUE_LABEL, label.clone().unwrap());
+                let break_label = format!("{}{}", BREAK_LABEL, label.clone().unwrap());
+                let mut instructions = Vec::new();
+                instructions.push(Instruction::Label(start_label.clone()));
+                let body_instrs = self.generate_tacky_statement(&body)?;
+                instructions.extend(body_instrs);
+                instructions.push(Instruction::Label(continue_label));
+                let (cond_instrs, cond_val) = self.generate_tacky_exp(condition)?;
+                instructions.extend(cond_instrs);
+                instructions.push(Instruction::JumpIfNotZero {
+                    condition: cond_val,
+                    target: start_label,
+                });
+                instructions.push(Instruction::Label(break_label));
+
+                Ok(instructions)
+            }
+            c_ast::Statement::While {
+                condition,
+                body,
+                label,
+            } => {
+                let continue_label = format!("{}{}", CONTINUE_LABEL, label.clone().unwrap());
+                let break_label = format!("{}{}", BREAK_LABEL, label.clone().unwrap());
+                let mut instructions = Vec::new();
+                instructions.push(Instruction::Label(continue_label.clone()));
+                let (cond_instrs, cond_val) = self.generate_tacky_exp(condition)?;
+                instructions.extend(cond_instrs);
+                instructions.push(Instruction::JumpIfZero {
+                    condition: cond_val,
+                    target: break_label.clone(),
+                });
+                let body_instrs = self.generate_tacky_statement(&body)?;
+                instructions.extend(body_instrs);
+                instructions.push(Instruction::Jump(continue_label));
+                instructions.push(Instruction::Label(break_label));
+                Ok(instructions)
+            }
+            c_ast::Statement::For {
+                init,
+                condition,
+                post,
+                body,
+                label,
+            } => {
+                let start_label = self.name_gen.new_label("start");
+                let continue_label = format!("{}{}", CONTINUE_LABEL, label.clone().unwrap());
+                let break_label = format!("{}{}", BREAK_LABEL, label.clone().unwrap());
+                let mut instructions = Vec::new();
+                let init_instrs = self.generate_forinit(init)?;
+                instructions.extend(init_instrs);
+                instructions.push(Instruction::Label(start_label.clone()));
+                if let Some(c) = condition {
+                    let (cond_instrs, cond_val) = self.generate_tacky_exp(c)?;
+                    instructions.extend(cond_instrs);
+                    instructions.push(Instruction::JumpIfZero {
+                        condition: cond_val,
+                        target: break_label.clone(),
+                    });
+                }
+                let body_instrs = self.generate_tacky_statement(&body)?;
+                instructions.extend(body_instrs);
+                instructions.push(Instruction::Label(continue_label));
+                if let Some(p) = post {
+                    let (post_instrs, _) = self.generate_tacky_exp(p)?;
+                    instructions.extend(post_instrs);
+                }
+                instructions.push(Instruction::Jump(start_label));
+                instructions.push(Instruction::Label(break_label));
+                Ok(instructions)
+            }
         }
     }
 
