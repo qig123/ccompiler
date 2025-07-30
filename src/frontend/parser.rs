@@ -21,51 +21,56 @@ impl Parser {
         }
     }
 
-    // --- 主入口和顶层解析函数 (这部分和您原来的一样，保持不变) ---
+    // --- 主入口和顶层解析函数 ---
 
     /// 主入口点。它解析整个记号流。
     pub fn parse(mut self) -> Result<Program, String> {
-        let program = self.parse_program()?;
-        Ok(program)
+        self.parse_program()
     }
 
     /// <program> ::= {<function-declaration>}
+    /// 根据语法，一个程序由一系列函数声明/定义组成。
     fn parse_program(&mut self) -> Result<Program, String> {
-        let mut fs = Vec::new();
+        let mut functions = Vec::new();
         while !self.match_token(TokenType::Eof) {
+            // 解析一个完整的函数声明/定义
+            // 注意：这里的语法假设顶层只有函数，没有全局变量。
             self.consume(TokenType::Int)?;
             let name_token = self.consume(TokenType::Identifier)?;
             let name = name_token
                 .value
-                .ok_or_else(|| "标识符记号缺少值".to_string())?;
-            let func_decl = self.parse_function_decl(name)?;
-            fs.push(func_decl);
+                .ok_or_else(|| "Identifier token is missing a value".to_string())?;
+            // 已经消耗了 "int <identifier>"，现在解析函数的剩余部分
+            let func_decl = self.parse_function_remainder(name)?;
+            functions.push(func_decl);
         }
-        Ok(Program { functions: fs })
+        Ok(Program { functions })
     }
-    //<declaration> ::= <variable-declaration> | <function-declaration>
+
+    /// <declaration> ::= <variable-declaration> | <function-declaration>
+    /// 解析一个声明。它会消耗掉 "int" 和标识符，然后根据下一个记号决定是变量还是函数。
     fn parse_declaration(&mut self) -> Result<Declaration, String> {
         self.consume(TokenType::Int)?;
         let name_token = self.consume(TokenType::Identifier)?;
         let name = name_token
             .value
-            .ok_or_else(|| "标识符记号缺少值".to_string())?;
-        let next = self.tokens.peek().cloned();
-        if let Some(t) = next {
-            if t.type_ == TokenType::LeftParen {
-                let func_decl = self.parse_function_decl(name)?;
-                return Ok(Declaration::Fun(func_decl));
-            } else {
-                let var_decl = self.parse_var_decl(name)?;
-                return Ok(Declaration::Variable(var_decl));
-            }
+            .ok_or_else(|| "Identifier token is missing a value".to_string())?;
+
+        // 向前查看一个记号来决定路径
+        // 如果是 '('，则为函数声明
+        // 否则，为变量声明
+        if self.check(TokenType::LeftParen) {
+            let func_decl = self.parse_function_remainder(name)?;
+            Ok(Declaration::Fun(func_decl))
         } else {
-            return Err("期待一个声明".to_string());
+            let var_decl = self.parse_var_remainder(name)?;
+            Ok(Declaration::Variable(var_decl))
         }
     }
-    // <variable-declaration> ::= "int" <identifier> ["=" <exp>] ";"
-    // 这里必须注意，"int" <identifier> 已经在调用方解析了
-    fn parse_var_decl(&mut self, name: String) -> Result<VarDecl, String> {
+
+    /// <variable-declaration> ::= "int" <identifier> ["=" <exp>] ";"
+    /// 注意: "int" <identifier> 已被调用者消耗。此函数解析变量声明的剩余部分。
+    fn parse_var_remainder(&mut self, name: String) -> Result<VarDecl, String> {
         let init = if self.match_token(TokenType::Assignment) {
             Some(self.parse_exp(0)?)
         } else {
@@ -76,44 +81,46 @@ impl Parser {
     }
 
     /// <function-declaration> ::= "int" <identifier> "(" <param-list> ")" (<block> | ";")
-    /// 这里必须注意，"int" <identifier> 已经在调用方解析了
-    fn parse_function_decl(&mut self, name: String) -> Result<FunDecl, String> {
+    /// 注意: "int" <identifier> 已被调用者消耗。此函数解析函数声明的剩余部分。
+    fn parse_function_remainder(&mut self, name: String) -> Result<FunDecl, String> {
         self.consume(TokenType::LeftParen)?;
         let params = self.parse_func_params()?;
         self.consume(TokenType::RightParen)?;
+
+        // 如果下一个是分号，则是函数原型声明；否则应该是函数体。
         if self.match_token(TokenType::Semicolon) {
-            return Ok(FunDecl {
-                name: name,
+            Ok(FunDecl {
+                name,
                 parameters: params,
                 body: None,
-            });
+            })
         } else {
-            self.consume(TokenType::LeftBrace)?; //代码不严谨的地方，这里应该在block里面 consume lef {.
+            // 期待一个代码块作为函数体
             let body = self.parse_block()?;
             Ok(FunDecl {
                 name,
-                parameters: Vec::new(),
+                parameters: params, // BUG修复：之前这里是 Vec::new()
                 body: Some(body),
             })
         }
     }
-    // <param-list> ::= "void" | "int" <identifier> {"," "int" <identifier>}
+
+    /// <param-list> ::= "void" | "int" <identifier> {"," "int" <identifier>}
     fn parse_func_params(&mut self) -> Result<Vec<String>, String> {
-        // 根据语法规则，参数列表要么以 'void' 开头，要么以 'int' 开头。
-        // 1. 尝试匹配 "void" 分支
         if self.match_token(TokenType::Void) {
-            // 匹配成功，例如 int foo(void)
-            // 返回一个空 Vec，表示没有参数名
             return Ok(Vec::new());
         }
-        // 2. 如果不是 "void"，则必须匹配 "int <identifier> ..." 分支
-        // 解析第一个强制性参数
+
+        // 如果不是 void，那么必须至少有一个 "int <identifier>"
+        // 检查是否是 ')'，如果是，说明是 int foo() 这种情况，参数列表为空
+        if self.check(TokenType::RightParen) {
+            return Ok(Vec::new());
+        }
+
         self.consume(TokenType::Int)?;
         let first_param = self.consume(TokenType::Identifier)?;
-
         let mut params = vec![first_param.value.unwrap()];
 
-        // 循环解析 {"," "int" <identifier>} 部分
         while self.match_token(TokenType::Comma) {
             self.consume(TokenType::Int)?;
             let next_param = self.consume(TokenType::Identifier)?;
@@ -122,8 +129,11 @@ impl Parser {
 
         Ok(params)
     }
-    //<block> ::= "{" {<block-item>} "}"
+
+    /// <block> ::= "{" {<block-item>} "}"
+    /// 解析一个完整代码块，包括 '{' 和 '}'。
     fn parse_block(&mut self) -> Result<Block, String> {
+        self.consume(TokenType::LeftBrace)?;
         let mut items = Vec::new();
         while !self.check(TokenType::RightBrace) {
             items.push(self.parse_block_item()?);
@@ -132,28 +142,27 @@ impl Parser {
         Ok(Block(items))
     }
 
-    //<block-item> ::= <statement> | <declaration>
+    /// <block-item> ::= <statement> | <declaration>
     fn parse_block_item(&mut self) -> Result<BlockItem, String> {
-        let next = self.tokens.peek().cloned();
-        if let Some(n) = next {
-            if n.type_ == TokenType::Int {
-                self.parse_declaration().map(BlockItem::D)
-            } else {
-                self.parse_statement().map(BlockItem::S)
-            }
+        if self.check(TokenType::Int) {
+            self.parse_declaration().map(BlockItem::D)
         } else {
-            return Err("期待一个Stmt或者声明".to_string());
+            self.parse_statement().map(BlockItem::S)
         }
     }
 
-    //<for-init> ::= <variable-declaration> | [<exp>] ";"
+    /// <for-init> ::= <variable-declaration> | [<exp>] ";"
     fn parse_forinit(&mut self) -> Result<ForInit, String> {
-        let t = self.tokens.peek().cloned().unwrap();
-        if self.match_token(TokenType::Int) {
-            let name_token = self.consume(TokenType::Identifier)?;
-            let name = name_token.value.unwrap();
-            let var_decl = self.parse_var_decl(name.clone())?;
-            Ok(ForInit::InitDecl(var_decl))
+        if self.check(TokenType::Int) {
+            // 这是一个内联变量声明
+            let decl = self.parse_declaration()?;
+            match decl {
+                Declaration::Variable(var_decl) => Ok(ForInit::InitDecl(var_decl)),
+                // for循环的init部分不能是函数声明
+                Declaration::Fun(_) => {
+                    Err("Function declaration is not allowed in for-init".to_string())
+                }
+            }
         } else if self.match_token(TokenType::Semicolon) {
             Ok(ForInit::InitExp(None))
         } else {
@@ -163,7 +172,7 @@ impl Parser {
         }
     }
 
-    /// <statement> ::= "return" <exp> ";" | <exp> ";" | ";"|"if" "(" <exp> ")" <statement> ["else" <statement>]
+    /// <statement> ::= ...
     fn parse_statement(&mut self) -> Result<Statement, String> {
         if self.match_token(TokenType::Return) {
             let expr = self.parse_exp(0)?;
@@ -176,19 +185,18 @@ impl Parser {
             let c = self.parse_exp(0)?;
             self.consume(TokenType::RightParen)?;
             let then_stmt = self.parse_statement()?;
-            let suc = self.match_token(TokenType::Else);
-            let else_stmt;
-            if suc {
-                else_stmt = Some(Box::new(self.parse_statement()?));
+            let else_stmt = if self.match_token(TokenType::Else) {
+                Some(Box::new(self.parse_statement()?))
             } else {
-                else_stmt = None;
-            }
+                None
+            };
             Ok(Statement::If {
                 condition: c,
                 then_stmt: Box::new(then_stmt),
-                else_stmt: else_stmt,
+                else_stmt,
             })
-        } else if self.match_token(TokenType::LeftBrace) {
+        } else if self.check(TokenType::LeftBrace) {
+            // 修正: parse_block 现在自己处理 '{'，所以这里只检查，不消耗
             let b = self.parse_block()?;
             Ok(Statement::Compound(b))
         } else if self.match_token(TokenType::Break) {
@@ -222,26 +230,26 @@ impl Parser {
         } else if self.match_token(TokenType::For) {
             self.consume(TokenType::LeftParen)?;
             let init = self.parse_forinit()?;
-            let condition;
-            let post;
-            if self.match_token(TokenType::Semicolon) {
-                condition = None;
+            let condition = if self.match_token(TokenType::Semicolon) {
+                None
             } else {
-                condition = Some(self.parse_exp(0)?);
+                let cond = self.parse_exp(0)?;
                 self.consume(TokenType::Semicolon)?;
-            }
-            if self.match_token(TokenType::RightParen) {
-                post = None;
+                Some(cond)
+            };
+            let post = if self.match_token(TokenType::RightParen) {
+                None
             } else {
-                post = Some(self.parse_exp(0)?);
+                let p = self.parse_exp(0)?;
                 self.consume(TokenType::RightParen)?;
-            }
+                Some(p)
+            };
             let body = self.parse_statement()?;
 
             Ok(Statement::For {
-                init: init,
-                condition: condition,
-                post: post,
+                init,
+                condition,
+                post,
                 body: Box::new(body),
                 label: None,
             })
@@ -258,13 +266,17 @@ impl Parser {
         let mut left = self.parse_prefix()?;
 
         loop {
-            let next_token = match self.tokens.peek().cloned() {
-                Some(tok) => tok,
-                None => break, // Token 流结束
+            // 通过 peek 获取下一个 token 的类型，但**不**持有对它的引用，
+            // 以避免在调用 self 的其他方法时出现借用冲突。
+            // TokenType 应该是 Copy 的，所以这里只是一个廉价的拷贝。
+            let next_token_type = if let Some(token) = self.tokens.peek() {
+                token.type_.clone()
+            } else {
+                break; // Token 流结束
             };
 
             // 获取中缀运算符的优先级，如果不是运算符或优先级太低，则停止循环。
-            let op_prec = match self.get_infix_precedence(&next_token.type_) {
+            let op_prec = match self.get_infix_precedence(&next_token_type) {
                 Some(prec) if prec >= min_prec => prec,
                 _ => break,
             };
@@ -275,14 +287,9 @@ impl Parser {
             left = match op_token.type_ {
                 // 特殊情况：三元运算符
                 TokenType::QuestionMark => {
-                    // 'left' 是我们的 condition
-                    // 解析 then 分支
-                    let then_exp = self.parse_exp(0)?; // 在 '?' 和 ':' 之间，优先级重置
-                    // 消耗 ':'
+                    let then_exp = self.parse_exp(0)?;
                     self.consume(TokenType::Colon)?;
-                    // 解析 else 分支。三元运算是右结合的，所以右侧的优先级是 op_prec
                     let else_exp = self.parse_exp(op_prec)?;
-
                     Expression::Conditional {
                         condition: Box::new(left),
                         left: Box::new(then_exp),
@@ -292,7 +299,6 @@ impl Parser {
 
                 // 特殊情况：赋值运算符 (右结合)
                 TokenType::Assignment => {
-                    // 右结合运算符的右侧表达式应该以其自身的优先级来解析
                     let right = self.parse_exp(op_prec)?;
                     Expression::Assignment {
                         left: Box::new(left),
@@ -304,7 +310,7 @@ impl Parser {
                 _ => {
                     let bin_op = match op_token.type_ {
                         TokenType::Add => BinaryOp::Add,
-                        TokenType::Negate => BinaryOp::Subtract, // 中缀 '-'
+                        TokenType::Negate => BinaryOp::Subtract,
                         TokenType::Mul => BinaryOp::Multiply,
                         TokenType::Div => BinaryOp::Divide,
                         TokenType::Remainder => BinaryOp::Remainder,
@@ -316,10 +322,9 @@ impl Parser {
                         TokenType::GreaterEqual => BinaryOp::GreaterEqual,
                         TokenType::Less => BinaryOp::Less,
                         TokenType::LessEqual => BinaryOp::LessEqual,
-                        _ => unreachable!("已在 get_infix_precedence 中过滤"),
+                        _ => unreachable!("Already filtered by get_infix_precedence"),
                     };
 
-                    // 左结合运算符的右侧表达式优先级要高一级
                     let right = self.parse_exp(op_prec + 1)?;
                     Expression::Binary {
                         op: bin_op,
@@ -332,26 +337,30 @@ impl Parser {
 
         Ok(left)
     }
-    //<argument-list> ::= <exp> {"," <exp>}
+
+    /// <argument-list> ::= <exp> {"," <exp>}
     fn parse_argument(&mut self) -> Result<Vec<Expression>, String> {
         let mut argument_list = Vec::new();
         if self.check(TokenType::RightParen) {
-            Ok(Vec::new())
-        } else {
+            return Ok(Vec::new());
+        }
+
+        loop {
             let e = self.parse_exp(0)?;
             argument_list.push(e);
-            while self.match_token(TokenType::Comma) {
-                let e = self.parse_exp(0)?;
-                argument_list.push(e);
+            if !self.match_token(TokenType::Comma) {
+                break;
             }
-            Ok(argument_list)
         }
+        Ok(argument_list)
     }
 
-    /// 解析前缀部分：数字、变量、括号表达式或一元运算符。
-    /// //<factor> ::= <int> | <identifier> | <unop> <factor> | "(" <exp> ")" | <identifier> "(" [<argument-list>] ")"
+    /// <factor> ::= <int> | <identifier> | <unop> <factor> | "(" <exp> ")" | <identifier> "(" [<argument-list>] ")"
     fn parse_prefix(&mut self) -> Result<Expression, String> {
-        let next_token = self.tokens.next().ok_or("预期有表达式，但输入已结束")?;
+        let next_token = self
+            .tokens
+            .next()
+            .ok_or("Expected an expression, but found end of input")?;
 
         match next_token.type_ {
             TokenType::Number => {
@@ -362,12 +371,12 @@ impl Parser {
                 Ok(Expression::Constant(value))
             }
             TokenType::Identifier => {
-                let name = next_token.value.ok_or("标识符缺少名称")?;
+                let name = next_token.value.ok_or("Identifier is missing a name")?;
                 if self.match_token(TokenType::LeftParen) {
                     let exp_vec = self.parse_argument()?;
                     self.consume(TokenType::RightParen)?;
                     Ok(Expression::FuncCall {
-                        name: name,
+                        name,
                         args: exp_vec,
                     })
                 } else {
@@ -375,11 +384,10 @@ impl Parser {
                 }
             }
             TokenType::LeftParen => {
-                let exp = self.parse_exp(0)?; // 括号内重置优先级。
+                let exp = self.parse_exp(0)?;
                 self.consume(TokenType::RightParen)?;
                 Ok(exp)
             }
-            // 处理一元运算符
             TokenType::Negate | TokenType::Complement | TokenType::Bang => {
                 let op = match next_token.type_ {
                     TokenType::Negate => UnaryOp::Negate,
@@ -387,7 +395,6 @@ impl Parser {
                     TokenType::Bang => UnaryOp::Not,
                     _ => unreachable!(),
                 };
-                // 对于一元运算符，它的右侧表达式应该以其自身的优先级来解析。
                 let ((), op_prec) = self.get_prefix_precedence(&next_token.type_).unwrap();
                 let right_exp = self.parse_exp(op_prec)?;
                 Ok(Expression::Unary {
@@ -396,13 +403,13 @@ impl Parser {
                 })
             }
             _ => Err(format!(
-                "预期是表达式的前缀部分，但得到 {:?}",
+                "Expected expression prefix, but got {:?}",
                 next_token.type_
             )),
         }
     }
 
-    /// 获取中缀运算符的优先级。如果 token 不是中缀运算符，返回 None。
+    /// 获取中缀运算符的优先级。
     fn get_infix_precedence(&self, typ: &TokenType) -> Option<i32> {
         match typ {
             TokenType::Assignment => Some(10),
@@ -414,7 +421,7 @@ impl Parser {
             | TokenType::GreaterEqual
             | TokenType::Less
             | TokenType::LessEqual => Some(50),
-            TokenType::Add | TokenType::Negate => Some(60), // Negate 在中缀位置代表减法
+            TokenType::Add | TokenType::Negate => Some(60),
             TokenType::Mul | TokenType::Div | TokenType::Remainder => Some(70),
             _ => None,
         }
@@ -423,18 +430,21 @@ impl Parser {
     /// 获取前缀（一元）运算符的优先级。
     fn get_prefix_precedence(&self, typ: &TokenType) -> Option<((), i32)> {
         match typ {
-            TokenType::Negate | TokenType::Complement | TokenType::Bang => Some(((), 80)), // 一元运算符优先级很高
+            TokenType::Negate | TokenType::Complement | TokenType::Bang => Some(((), 80)),
             _ => None,
         }
     }
 
-    // --- 工具函数 (保持不变) ---
+    // --- 工具函数 ---
 
     fn consume(&mut self, expected: TokenType) -> Result<Token, String> {
         match self.tokens.next() {
             Some(token) if token.type_ == expected => Ok(token),
-            Some(token) => Err(format!("预期是 {:?}，但得到 {:?}", expected, token.type_)),
-            None => Err(format!("预期是 {:?}，但输入已结束", expected)),
+            Some(token) => Err(format!(
+                "Expected {:?}, but got {:?}",
+                expected, token.type_
+            )),
+            None => Err(format!("Expected {:?}, but input ended", expected)),
         }
     }
 
