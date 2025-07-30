@@ -24,7 +24,6 @@ mod frontend;
 /// RAII Guard: 在其生命周期结束时自动清理指定的文件。
 #[derive(Debug)]
 struct FileJanitor {
-    /// 需要被清理的文件路径列表
     files_to_clean: Vec<PathBuf>,
 }
 
@@ -34,14 +33,11 @@ impl FileJanitor {
             files_to_clean: files,
         }
     }
-
-    /// "解除" 对某个文件的清理责任。
     fn keep(&mut self, path_to_keep: &Path) {
         self.files_to_clean.retain(|p| p != path_to_keep);
     }
 }
 
-/// 当 FileJanitor 实例离开作用域时，`drop` 方法会被自动调用。
 impl Drop for FileJanitor {
     fn drop(&mut self) {
         if self.files_to_clean.is_empty() {
@@ -73,28 +69,19 @@ impl UniqueNameGenerator {
     pub fn new() -> Self {
         Self::default()
     }
-
-    /// 为 Tacky IR 生成一个新的临时变量名。
     pub fn new_temp_var(&mut self) -> String {
         let current_value = self.counter;
         self.counter += 1;
         format!("tmp{}", current_value)
     }
-
-    /// 为 Tacky IR 生成一个新的标签。
     pub fn new_label(&mut self, name: &str) -> String {
         let current_value = self.counter;
         self.counter += 1;
         format!("{}.{}", name, current_value)
     }
-
-    /// 为循环标记阶段生成一个新的循环标签 (new_label的别名)。
     pub fn new_loop_label(&mut self, name: &str) -> String {
         self.new_label(name)
     }
-
-    /// 在变量解析阶段，为变量生成一个唯一的内部名称。
-    /// 保证该名称不是C语言中的合法标识符。
     pub fn new_variable_name(&mut self, name: String) -> String {
         let current_value = self.counter;
         self.counter += 1;
@@ -132,12 +119,15 @@ struct Cli {
     /// 生成汇编文件 (.s) 并保留它
     #[arg(short = 'S', long = "save-assembly")]
     save_assembly: bool,
+
+    /// 【只编译到目标文件 (.o)，不进行链接
+    #[arg(short = 'c', long = "compile-only")]
+    compile_only: bool,
 }
 
 fn main() {
     let cli = Cli::parse();
     if let Err(e) = run_compiler(cli) {
-        // 在 main 函数中统一处理最终的错误打印
         eprintln!("\n❌ 编译失败: {}", e);
         std::process::exit(1);
     }
@@ -157,6 +147,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
 
     // --- 2. 定义所有中间和最终文件路径 ---
     let input_path = &cli.source_file;
+    let output_obj_path = input_path.with_extension("o");
     let output_exe_path = input_path.with_extension("");
     let preprocessed_path = input_path.with_extension("i");
     let assembly_path = input_path.with_extension("s");
@@ -165,6 +156,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     let mut janitor = FileJanitor::new(vec![
         preprocessed_path.clone(),
         assembly_path.clone(),
+        output_obj_path.clone(),
         output_exe_path.clone(),
     ]);
 
@@ -172,6 +164,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     drop(FileJanitor::new(vec![
         preprocessed_path.clone(),
         assembly_path.clone(),
+        output_obj_path.clone(),
         output_exe_path.clone(),
     ]));
 
@@ -182,21 +175,21 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
 
     // --- 3. 编译流程 (Pipeline) ---
 
-    // 步骤 (1): 预处理和词法分析
+    // (1) 预处理和词法分析
     let tokens = preprocess_and_lex(input_path, &preprocessed_path)?;
     if cli.lex {
         println!("\n--lex: 词法分析完成，程序停止。");
         return Ok(());
     }
 
-    // 步骤 (2): 语法分析
+    // (2) 语法分析
     let ast = parse(tokens)?;
     if cli.parse {
         println!("\n--parse: 语法分析完成，程序停止。");
         return Ok(());
     }
 
-    // 步骤 (3): 语义分析
+    // (3) 语义分析
     let resolved_ast = resolve_vars(&ast, &mut name_gen)?;
     let labeled_ast = label_loops(&resolved_ast, &mut name_gen)?;
     if cli.validate {
@@ -204,35 +197,43 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
         return Ok(());
     }
 
-    // 步骤 (4): 中间代码(IR)生成
+    // (4) 中间代码(IR)生成
     let ir_ast = gen_ir(&labeled_ast, &mut name_gen)?;
     if cli.tacky {
         println!("\n--tacky: IR 生成完成, 程序停止。");
         return Ok(());
     }
 
-    // 步骤 (5): 汇编AST生成
+    // (5) 汇编AST生成
     let assembly_code_ast = codegen(ir_ast)?;
     if cli.codegen {
         println!("\n--codegen: 汇编 AST 生成完成, 程序停止。");
         return Ok(());
     }
 
-    // 步骤 (6): 发射汇编代码
+    // (6) 发射汇编代码
     emit_assembly(&assembly_code_ast, &assembly_path)?;
     if cli.save_assembly {
         janitor.keep(&assembly_path); // 保留汇编文件
         println!("\n-S: 保留汇编文件。");
     }
 
-    // 步骤 (7): 汇编与链接
-    assemble_and_link(&assembly_path, &output_exe_path)?;
-    janitor.keep(&output_exe_path); // 成功后，保留可执行文件
+    // --- 根据 -c 标志决定下一步 ---
 
-    // 步骤 (8): 运行并报告退出码
-    run_and_report_exit_code(&output_exe_path)?;
+    if cli.compile_only {
+        // (7a) 只汇编，不链接
+        assemble_only(&assembly_path, &output_obj_path)?;
+        janitor.keep(&output_obj_path); // 保留 .o 文件
+        println!("\n✅ 编译完成，生成目标文件: {}", output_obj_path.display());
+    } else {
+        // (7b) 汇编并链接
+        assemble_and_link(&assembly_path, &output_exe_path)?;
+        janitor.keep(&output_exe_path); // 保留可执行文件
 
-    println!("\n✅ 编译并运行成功！");
+        // (8) 运行并报告退出码
+        run_and_report_exit_code(&output_exe_path)?;
+        println!("\n✅ 编译并运行成功！");
+    }
 
     Ok(())
 }
@@ -269,7 +270,6 @@ fn preprocess_and_lex(
     );
     Ok(tokens)
 }
-
 fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
     println!("(2) 语法分析 (输入 {} 个 token)...", tokens.len());
     let parser = parser::Parser::new(tokens);
@@ -280,7 +280,6 @@ fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
     program.pretty_print(&mut printer);
     Ok(program)
 }
-
 fn resolve_vars(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, String> {
     println!("(3.1) 语义分析：变量解析...");
     let mut v = ResloveVar::new(g);
@@ -291,7 +290,6 @@ fn resolve_vars(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program,
     ast.pretty_print(&mut printer);
     Ok(ast)
 }
-
 fn label_loops(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, String> {
     println!("(3.2) 语义分析：循环标记...");
     let mut v = LoopLabeling::new(g);
@@ -302,7 +300,6 @@ fn label_loops(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, 
     ast.pretty_print(&mut printer);
     Ok(ast)
 }
-
 fn gen_ir(
     c_ast: &Program,
     g: &mut UniqueNameGenerator,
@@ -316,7 +313,6 @@ fn gen_ir(
     ir_ast.pretty_print(&mut printer);
     Ok(ir_ast)
 }
-
 fn codegen(ir_ast: crate::backend::tacky_ir::Program) -> Result<assembly_ast::Program, String> {
     println!("(5) 汇编 AST 生成...");
     let mut ass_gen = AssemblyGenerator::new();
@@ -327,7 +323,6 @@ fn codegen(ir_ast: crate::backend::tacky_ir::Program) -> Result<assembly_ast::Pr
     ass_ast.pretty_print(&mut printer);
     Ok(ass_ast)
 }
-
 fn emit_assembly(asm_ast: &assembly_ast::Program, output_path: &Path) -> Result<(), String> {
     println!("(6) 汇编代码发射 -> {}", output_path.display());
     let code_generator = CodeGenerator::new();
@@ -336,9 +331,30 @@ fn emit_assembly(asm_ast: &assembly_ast::Program, output_path: &Path) -> Result<
     Ok(())
 }
 
+/// 只将汇编文件编译成目标文件。
+fn assemble_only(assembly_file: &Path, output_obj: &Path) -> Result<(), String> {
+    println!(
+        "(7a) 仅汇编: {} -> {}",
+        assembly_file.display(),
+        output_obj.display()
+    );
+    let status = Command::new("gcc")
+        .arg("-c") // 关键标志
+        .arg(assembly_file)
+        .args(["-o", output_obj.to_str().unwrap()])
+        .status()
+        .map_err(|e| format!("无法执行 gcc: {}", e))?;
+
+    if !status.success() {
+        return Err("gcc 汇编失败".to_string());
+    }
+    println!("   ✅ 汇编成功。");
+    Ok(())
+}
+
 fn assemble_and_link(assembly_file: &Path, output_exe: &Path) -> Result<(), String> {
     println!(
-        "(7) 汇编与链接: {} -> {}",
+        "(7b) 汇编与链接: {} -> {}",
         assembly_file.display(),
         output_exe.display()
     );
@@ -382,9 +398,10 @@ mod tests {
             lex: false,
             parse: false,
             validate: false,
-            tacky: true,
+            tacky: false,
             codegen: false,
             save_assembly: false,
+            compile_only: false,
         };
         run_compiler(cli)
     }
