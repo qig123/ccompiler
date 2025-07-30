@@ -22,18 +22,8 @@ impl<'a> TackyGenerator<'a> {
         let mut fs = Vec::new();
         for item in &c_ast.functions {
             let mut all_instructions = Vec::new();
-            for statement in &item.body.0 {
-                match statement {
-                    BlockItem::D(d) => {
-                        let ins = self.generate_tacky_decl(d)?;
-                        all_instructions.extend(ins);
-                    }
-                    BlockItem::S(s) => {
-                        let instructions = self.generate_tacky_statement(s)?;
-                        all_instructions.extend(instructions)
-                    }
-                }
-            }
+            let body_ins = self.generate_block(&item.body)?;
+            all_instructions.extend(body_ins);
             //在每个函数体的末尾添加一条额外的 TACKY 指令：Return(Constant(0))
             all_instructions.push(Instruction::Return(Value::Constant(0)));
             let f1 = Function {
@@ -43,6 +33,22 @@ impl<'a> TackyGenerator<'a> {
             fs.push(f1);
         }
         Ok(Program { functions: fs })
+    }
+    fn generate_block(&mut self, b: &c_ast::Block) -> Result<Vec<Instruction>, String> {
+        let mut all_instructions = Vec::new();
+        for statement in &b.0 {
+            match statement {
+                BlockItem::D(d) => {
+                    let ins = self.generate_tacky_decl(&d)?;
+                    all_instructions.extend(ins);
+                }
+                BlockItem::S(s) => {
+                    let instructions = self.generate_tacky_statement(&s)?;
+                    all_instructions.extend(instructions)
+                }
+            }
+        }
+        Ok(all_instructions)
     }
     fn generate_tacky_decl(&mut self, d: &c_ast::Declaration) -> Result<Vec<Instruction>, String> {
         match &d.init {
@@ -81,6 +87,7 @@ impl<'a> TackyGenerator<'a> {
                 let (instructions, _) = self.generate_tacky_exp(e)?;
                 Ok(instructions)
             }
+            c_ast::Statement::Compound(b) => Ok(self.generate_block(b)?),
             c_ast::Statement::If {
                 condition,
                 then_stmt,
@@ -149,9 +156,6 @@ impl<'a> TackyGenerator<'a> {
                     }
                 }
                 Ok(instructions)
-            }
-            _ => {
-                panic!()
             }
         }
     }
