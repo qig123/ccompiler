@@ -2,7 +2,7 @@
 
 use crate::{
     UniqueNameGenerator,
-    frontend::c_ast::{Block, BlockItem, Function, Program, Statement},
+    frontend::c_ast::{Block, BlockItem, FunDecl, Program, Statement},
 };
 
 pub struct LoopLabeling<'a> {
@@ -30,13 +30,13 @@ impl<'a> LoopLabeling<'a> {
         })
     }
 
-    fn label_loops_in_function(&mut self, f: &Function) -> Result<Function, String> {
+    fn label_loops_in_function(&mut self, f: &FunDecl) -> Result<FunDecl, String> {
         // 函数本身不创建循环，但我们需要遍历它的 body
-        let new_body = self.label_loops_in_block(&f.body)?;
-        Ok(Function {
+        let new_body = self.label_loops_in_block(&f.body.clone().unwrap())?;
+        Ok(FunDecl {
             name: f.name.clone(),
             parameters: f.parameters.clone(),
-            body: new_body,
+            body: Some(new_body),
         })
     }
 

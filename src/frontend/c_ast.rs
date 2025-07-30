@@ -5,31 +5,43 @@ use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct Program {
-    pub functions: Vec<Function>,
+    pub functions: Vec<FunDecl>,
 }
-#[derive(Debug, Clone)]
-pub struct Function {
-    pub name: String,
-    pub parameters: Vec<String>,
-    pub body: Block,
-}
+
 #[derive(Debug, Clone)]
 pub enum BlockItem {
     S(Statement),
     D(Declaration),
 }
+
 #[derive(Debug, Clone)]
-pub struct Declaration {
-    pub name: String,
-    pub init: Option<Box<Expression>>,
+pub enum Declaration {
+    Fun(FunDecl),
+    Variable(VarDecl),
 }
+
+#[derive(Debug, Clone)]
+pub struct FunDecl {
+    pub name: String,
+    pub parameters: Vec<String>,
+    pub body: Option<Block>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VarDecl {
+    pub name: String,
+    pub init: Option<Expression>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Block(pub Vec<BlockItem>);
+
 #[derive(Debug, Clone)]
 pub enum ForInit {
-    InitDecl(Declaration),
+    InitDecl(VarDecl),
     InitExp(Option<Expression>),
 }
+
 #[derive(Debug, Clone)]
 pub enum Statement {
     Return(Expression),
@@ -61,7 +73,6 @@ pub enum Statement {
         label: Option<String>,
     },
 }
-
 #[derive(Debug, Clone)]
 pub enum Expression {
     Constant(i64),
@@ -84,15 +95,17 @@ pub enum Expression {
         left: Box<Expression>,
         right: Box<Expression>,
     },
+    FuncCall {
+        name: String,
+        args: Vec<Expression>,
+    },
 }
-
 #[derive(Debug, Clone)]
 pub enum UnaryOp {
     Complement,
     Negate,
     Not,
 }
-
 #[derive(Debug, Clone)]
 pub enum BinaryOp {
     Add,
@@ -109,7 +122,6 @@ pub enum BinaryOp {
     Less,
     Greater,
 }
-
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -119,7 +131,6 @@ impl fmt::Display for UnaryOp {
         }
     }
 }
-
 impl fmt::Display for BinaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -151,25 +162,64 @@ impl AstNode for Program {
     }
 }
 
-impl AstNode for Function {
+impl AstNode for FunDecl {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         let params_str = if self.parameters.is_empty() {
             "void".to_string()
         } else {
             self.parameters.join(", ")
         };
-        printer
-            .writeln(&format!(
-                "Function(name: \"{}\", params: [{}])",
-                self.name, params_str
-            ))
-            .unwrap();
 
-        printer.indent();
-        self.body.pretty_print(printer);
-        printer.unindent();
+        if let Some(body) = &self.body {
+            printer
+                .writeln(&format!(
+                    "FunctionDefinition(name: \"{}\", params: [{}])",
+                    self.name, params_str
+                ))
+                .unwrap();
+            printer.indent();
+            body.pretty_print(printer);
+            printer.unindent();
+        } else {
+            printer
+                .writeln(&format!(
+                    "FunctionDeclaration(name: \"{}\", params: [{}])",
+                    self.name, params_str
+                ))
+                .unwrap();
+        }
     }
 }
+
+impl AstNode for VarDecl {
+    fn pretty_print(&self, printer: &mut PrettyPrinter) {
+        if let Some(init_expr) = &self.init {
+            printer
+                .writeln(&format!(
+                    "VarDeclaration(name: \"{}\", with init)",
+                    self.name
+                ))
+                .unwrap();
+            printer.indent();
+            init_expr.pretty_print(printer);
+            printer.unindent();
+        } else {
+            printer
+                .writeln(&format!("VarDeclaration(name: \"{}\")", self.name))
+                .unwrap();
+        }
+    }
+}
+
+impl AstNode for Declaration {
+    fn pretty_print(&self, printer: &mut PrettyPrinter) {
+        match self {
+            Declaration::Fun(fun_decl) => fun_decl.pretty_print(printer),
+            Declaration::Variable(var_decl) => var_decl.pretty_print(printer),
+        }
+    }
+}
+
 impl AstNode for Block {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         printer.writeln("Block").unwrap();
@@ -180,29 +230,11 @@ impl AstNode for Block {
         printer.unindent();
     }
 }
-
 impl AstNode for BlockItem {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
             BlockItem::S(s) => s.pretty_print(printer),
             BlockItem::D(d) => d.pretty_print(printer),
-        }
-    }
-}
-
-impl AstNode for Declaration {
-    fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        if let Some(init_expr) = &self.init {
-            printer
-                .writeln(&format!("Declare(name: \"{}\", with init)", self.name))
-                .unwrap();
-            printer.indent();
-            init_expr.pretty_print(printer);
-            printer.unindent();
-        } else {
-            printer
-                .writeln(&format!("Declare(name: \"{}\")", self.name))
-                .unwrap();
         }
     }
 }
@@ -228,7 +260,6 @@ impl AstNode for ForInit {
         }
     }
 }
-
 impl AstNode for Statement {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
@@ -254,24 +285,20 @@ impl AstNode for Statement {
             } => {
                 printer.writeln("IfStatement").unwrap();
                 printer.indent();
-
                 printer.writeln("Condition").unwrap();
                 printer.indent();
                 condition.pretty_print(printer);
                 printer.unindent();
-
                 printer.writeln("Then").unwrap();
                 printer.indent();
                 then_stmt.pretty_print(printer);
                 printer.unindent();
-
                 if let Some(else_s) = else_stmt {
                     printer.writeln("Else").unwrap();
                     printer.indent();
                     else_s.pretty_print(printer);
                     printer.unindent();
                 }
-
                 printer.unindent();
             }
             Statement::Compound(b) => {
@@ -300,17 +327,14 @@ impl AstNode for Statement {
                     .writeln(&format!("WhileStatement(label:{})", label_str))
                     .unwrap();
                 printer.indent();
-
                 printer.writeln("Condition").unwrap();
                 printer.indent();
                 condition.pretty_print(printer);
                 printer.unindent();
-
                 printer.writeln("Body").unwrap();
                 printer.indent();
                 body.pretty_print(printer);
                 printer.unindent();
-
                 printer.unindent();
             }
             Statement::DoWhile {
@@ -323,17 +347,14 @@ impl AstNode for Statement {
                     .writeln(&format!("DoWhileStatement(label:{})", label_str))
                     .unwrap();
                 printer.indent();
-
                 printer.writeln("Body").unwrap();
                 printer.indent();
                 body.pretty_print(printer);
                 printer.unindent();
-
                 printer.writeln("Condition").unwrap();
                 printer.indent();
                 condition.pretty_print(printer);
                 printer.unindent();
-
                 printer.unindent();
             }
             Statement::For {
@@ -348,12 +369,10 @@ impl AstNode for Statement {
                     .writeln(&format!("ForStatement(label:{})", label_str))
                     .unwrap();
                 printer.indent();
-
                 printer.writeln("Init").unwrap();
                 printer.indent();
                 init.pretty_print(printer);
                 printer.unindent();
-
                 printer.writeln("Condition").unwrap();
                 printer.indent();
                 if let Some(cond_expr) = condition {
@@ -362,7 +381,6 @@ impl AstNode for Statement {
                     printer.writeln("EmptyCondition").unwrap();
                 }
                 printer.unindent();
-
                 printer.writeln("Post-Expression").unwrap();
                 printer.indent();
                 if let Some(post_expr) = post {
@@ -371,18 +389,16 @@ impl AstNode for Statement {
                     printer.writeln("EmptyPostExpression").unwrap();
                 }
                 printer.unindent();
-
                 printer.writeln("Body").unwrap();
                 printer.indent();
                 body.pretty_print(printer);
                 printer.unindent();
-
                 printer.unindent();
             }
         }
     }
 }
-
+// Expression 的实现保持不变，它是正确的
 impl AstNode for Expression {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
@@ -419,22 +435,35 @@ impl AstNode for Expression {
             } => {
                 printer.writeln("Conditional(op: '? :')").unwrap();
                 printer.indent();
-
                 printer.writeln("Condition").unwrap();
                 printer.indent();
                 condition.pretty_print(printer);
                 printer.unindent();
-
                 printer.writeln("Then").unwrap();
                 printer.indent();
                 left.pretty_print(printer);
                 printer.unindent();
-
                 printer.writeln("Else").unwrap();
                 printer.indent();
                 right.pretty_print(printer);
                 printer.unindent();
-
+                printer.unindent();
+            }
+            Expression::FuncCall { name, args } => {
+                printer
+                    .writeln(&format!("FunctionCall(name: \"{}\")", name))
+                    .unwrap();
+                printer.indent();
+                printer.writeln("Arguments").unwrap();
+                printer.indent();
+                if args.is_empty() {
+                    printer.writeln("NoArguments").unwrap();
+                } else {
+                    for arg in args {
+                        arg.pretty_print(printer);
+                    }
+                }
+                printer.unindent();
                 printer.unindent();
             }
         }

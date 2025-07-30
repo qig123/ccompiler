@@ -21,20 +21,21 @@ impl<'a> TackyGenerator<'a> {
     }
 
     pub fn generate_tacky(&mut self, c_ast: &c_ast::Program) -> Result<Program, String> {
-        let mut fs = Vec::new();
-        for item in &c_ast.functions {
-            let mut all_instructions = Vec::new();
-            let body_ins = self.generate_block(&item.body)?;
-            all_instructions.extend(body_ins);
-            //在每个函数体的末尾添加一条额外的 TACKY 指令：Return(Constant(0))
-            all_instructions.push(Instruction::Return(Value::Constant(0)));
-            let f1 = Function {
-                name: item.name.clone(),
-                body: all_instructions,
-            };
-            fs.push(f1);
-        }
-        Ok(Program { functions: fs })
+        panic!()
+        // let mut fs = Vec::new();
+        // for item in &c_ast.functions {
+        //     let mut all_instructions = Vec::new();
+        //     let body_ins = self.generate_block(&item.body)?;
+        //     all_instructions.extend(body_ins);
+        //     //在每个函数体的末尾添加一条额外的 TACKY 指令：Return(Constant(0))
+        //     all_instructions.push(Instruction::Return(Value::Constant(0)));
+        //     let f1 = Function {
+        //         name: item.name.clone(),
+        //         body: all_instructions,
+        //     };
+        //     fs.push(f1);
+        // }
+        // Ok(Program { functions: fs })
     }
     fn generate_block(&mut self, b: &c_ast::Block) -> Result<Vec<Instruction>, String> {
         let mut all_instructions = Vec::new();
@@ -53,34 +54,36 @@ impl<'a> TackyGenerator<'a> {
         Ok(all_instructions)
     }
     fn generate_tacky_decl(&mut self, d: &c_ast::Declaration) -> Result<Vec<Instruction>, String> {
-        match &d.init {
-            None => {
-                let v: Vec<Instruction> = Vec::new();
-                Ok(v)
-            }
-            Some(e) => {
-                let (mut instructions, result_value) = self.generate_tacky_exp(&e)?;
-                let ins_c = Instruction::Copy {
-                    src: result_value,
-                    dst: Value::Var(d.name.clone()),
-                };
-                instructions.push(ins_c);
-                Ok(instructions)
-            }
-        }
+        panic!()
+        // match &d.init {
+        //     None => {
+        //         let v: Vec<Instruction> = Vec::new();
+        //         Ok(v)
+        //     }
+        //     Some(e) => {
+        //         let (mut instructions, result_value) = self.generate_tacky_exp(&e)?;
+        //         let ins_c = Instruction::Copy {
+        //             src: result_value,
+        //             dst: Value::Var(d.name.clone()),
+        //         };
+        //         instructions.push(ins_c);
+        //         Ok(instructions)
+        //     }
+        // }
     }
     fn generate_forinit(&mut self, init: &c_ast::ForInit) -> Result<Vec<Instruction>, String> {
-        match init {
-            c_ast::ForInit::InitDecl(d) => Ok(self.generate_tacky_decl(d)?),
-            c_ast::ForInit::InitExp(e) => {
-                if let Some(item) = e {
-                    let (ins, _) = self.generate_tacky_exp(item)?; //？
-                    Ok(ins)
-                } else {
-                    Ok(Vec::new())
-                }
-            }
-        }
+        panic!()
+        // match init {
+        //     c_ast::ForInit::InitDecl(d) => Ok(self.generate_tacky_decl(d)?),
+        //     c_ast::ForInit::InitExp(e) => {
+        //         if let Some(item) = e {
+        //             let (ins, _) = self.generate_tacky_exp(item)?; //？
+        //             Ok(ins)
+        //         } else {
+        //             Ok(Vec::new())
+        //         }
+        //     }
+        // }
     }
 
     fn generate_tacky_statement(
@@ -462,6 +465,7 @@ impl<'a> TackyGenerator<'a> {
 
                 Ok((instructions, result_val))
             }
+            _ => panic!(),
         }
     }
 }

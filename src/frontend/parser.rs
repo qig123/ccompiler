@@ -4,8 +4,8 @@ use std::iter::Peekable;
 use std::vec::IntoIter;
 
 use crate::frontend::c_ast::{
-    BinaryOp, Block, BlockItem, Declaration, Expression, ForInit, Function, Program, Statement,
-    UnaryOp,
+    BinaryOp, Block, BlockItem, Declaration, Expression, ForInit, FunDecl, Program, Statement,
+    UnaryOp, VarDecl,
 };
 use crate::frontend::lexer::{Token, TokenType};
 
@@ -26,40 +26,101 @@ impl Parser {
     /// 主入口点。它解析整个记号流。
     pub fn parse(mut self) -> Result<Program, String> {
         let program = self.parse_program()?;
-        self.consume(TokenType::Eof)?;
         Ok(program)
     }
 
-    /// <program> ::= <function>
+    /// <program> ::= {<function-declaration>}
     fn parse_program(&mut self) -> Result<Program, String> {
-        let function = self.parse_function()?;
-        Ok(Program {
-            functions: vec![function],
-        })
+        let mut fs = Vec::new();
+        while !self.match_token(TokenType::Eof) {
+            self.consume(TokenType::Int)?;
+            let name_token = self.consume(TokenType::Identifier)?;
+            let name = name_token
+                .value
+                .ok_or_else(|| "标识符记号缺少值".to_string())?;
+            let func_decl = self.parse_function_decl(name)?;
+            fs.push(func_decl);
+        }
+        Ok(Program { functions: fs })
     }
-
-    /// <function> ::= "int" <identifier> "(" "void" ")" <block>
-    fn parse_function(&mut self) -> Result<Function, String> {
+    //<declaration> ::= <variable-declaration> | <function-declaration>
+    fn parse_declaration(&mut self) -> Result<Declaration, String> {
         self.consume(TokenType::Int)?;
         let name_token = self.consume(TokenType::Identifier)?;
         let name = name_token
             .value
             .ok_or_else(|| "标识符记号缺少值".to_string())?;
+        let next = self.tokens.peek().cloned();
+        if let Some(t) = next {
+            if t.type_ == TokenType::LeftParen {
+                let func_decl = self.parse_function_decl(name)?;
+                return Ok(Declaration::Fun(func_decl));
+            } else {
+                let var_decl = self.parse_var_decl(name)?;
+                return Ok(Declaration::Variable(var_decl));
+            }
+        } else {
+            return Err("期待一个声明".to_string());
+        }
+    }
+    // <variable-declaration> ::= "int" <identifier> ["=" <exp>] ";"
+    // 这里必须注意，"int" <identifier> 已经在调用方解析了
+    fn parse_var_decl(&mut self, name: String) -> Result<VarDecl, String> {
+        let init = if self.match_token(TokenType::Assignment) {
+            Some(self.parse_exp(0)?)
+        } else {
+            None
+        };
+        self.consume(TokenType::Semicolon)?;
+        Ok(VarDecl { name, init })
+    }
 
+    /// <function-declaration> ::= "int" <identifier> "(" <param-list> ")" (<block> | ";")
+    /// 这里必须注意，"int" <identifier> 已经在调用方解析了
+    fn parse_function_decl(&mut self, name: String) -> Result<FunDecl, String> {
         self.consume(TokenType::LeftParen)?;
-        self.consume(TokenType::Void)?;
+        let params = self.parse_func_params()?;
         self.consume(TokenType::RightParen)?;
-        if self.check(TokenType::LeftBrace) {
-            self.consume(TokenType::LeftBrace)?;
+        if self.match_token(TokenType::Semicolon) {
+            return Ok(FunDecl {
+                name: name,
+                parameters: params,
+                body: None,
+            });
+        } else {
+            self.consume(TokenType::LeftBrace)?; //代码不严谨的地方，这里应该在block里面 consume lef {.
             let body = self.parse_block()?;
-            Ok(Function {
+            Ok(FunDecl {
                 name,
                 parameters: Vec::new(),
-                body: body,
+                body: Some(body),
             })
-        } else {
-            return Err("期待一个代码块".to_string());
         }
+    }
+    // <param-list> ::= "void" | "int" <identifier> {"," "int" <identifier>}
+    fn parse_func_params(&mut self) -> Result<Vec<String>, String> {
+        // 根据语法规则，参数列表要么以 'void' 开头，要么以 'int' 开头。
+        // 1. 尝试匹配 "void" 分支
+        if self.match_token(TokenType::Void) {
+            // 匹配成功，例如 int foo(void)
+            // 返回一个空 Vec，表示没有参数名
+            return Ok(Vec::new());
+        }
+        // 2. 如果不是 "void"，则必须匹配 "int <identifier> ..." 分支
+        // 解析第一个强制性参数
+        self.consume(TokenType::Int)?;
+        let first_param = self.consume(TokenType::Identifier)?;
+
+        let mut params = vec![first_param.value.unwrap()];
+
+        // 循环解析 {"," "int" <identifier>} 部分
+        while self.match_token(TokenType::Comma) {
+            self.consume(TokenType::Int)?;
+            let next_param = self.consume(TokenType::Identifier)?;
+            params.push(next_param.value.unwrap());
+        }
+
+        Ok(params)
     }
     //<block> ::= "{" {<block-item>} "}"
     fn parse_block(&mut self) -> Result<Block, String> {
@@ -73,32 +134,26 @@ impl Parser {
 
     //<block-item> ::= <statement> | <declaration>
     fn parse_block_item(&mut self) -> Result<BlockItem, String> {
-        if self.check(TokenType::Int) {
-            self.parse_declaration().map(BlockItem::D)
+        let next = self.tokens.peek().cloned();
+        if let Some(n) = next {
+            if n.type_ == TokenType::Int {
+                self.parse_declaration().map(BlockItem::D)
+            } else {
+                self.parse_statement().map(BlockItem::S)
+            }
         } else {
-            self.parse_statement().map(BlockItem::S)
+            return Err("期待一个Stmt或者声明".to_string());
         }
     }
 
-    //<declaration> ::= "int" <identifier> ["=" <exp>] ";"
-    fn parse_declaration(&mut self) -> Result<Declaration, String> {
-        self.consume(TokenType::Int)?;
-        let id = self.consume(TokenType::Identifier)?;
-        let name = id.value.ok_or("标识符缺少名称")?;
-
-        let init = if self.match_token(TokenType::Assignment) {
-            Some(Box::new(self.parse_exp(0)?))
-        } else {
-            None
-        };
-
-        self.consume(TokenType::Semicolon)?;
-        Ok(Declaration { name, init })
-    }
-    //<for-init> ::= <declaration> | [<exp>] ";"
+    //<for-init> ::= <variable-declaration> | [<exp>] ";"
     fn parse_forinit(&mut self) -> Result<ForInit, String> {
-        if self.check(TokenType::Int) {
-            Ok(ForInit::InitDecl(self.parse_declaration()?))
+        let t = self.tokens.peek().cloned().unwrap();
+        if self.match_token(TokenType::Int) {
+            let name_token = self.consume(TokenType::Identifier)?;
+            let name = name_token.value.unwrap();
+            let var_decl = self.parse_var_decl(name.clone())?;
+            Ok(ForInit::InitDecl(var_decl))
         } else if self.match_token(TokenType::Semicolon) {
             Ok(ForInit::InitExp(None))
         } else {
@@ -277,8 +332,24 @@ impl Parser {
 
         Ok(left)
     }
+    //<argument-list> ::= <exp> {"," <exp>}
+    fn parse_argument(&mut self) -> Result<Vec<Expression>, String> {
+        let mut argument_list = Vec::new();
+        if self.check(TokenType::RightParen) {
+            Ok(Vec::new())
+        } else {
+            let e = self.parse_exp(0)?;
+            argument_list.push(e);
+            while self.match_token(TokenType::Comma) {
+                let e = self.parse_exp(0)?;
+                argument_list.push(e);
+            }
+            Ok(argument_list)
+        }
+    }
 
     /// 解析前缀部分：数字、变量、括号表达式或一元运算符。
+    /// //<factor> ::= <int> | <identifier> | <unop> <factor> | "(" <exp> ")" | <identifier> "(" [<argument-list>] ")"
     fn parse_prefix(&mut self) -> Result<Expression, String> {
         let next_token = self.tokens.next().ok_or("预期有表达式，但输入已结束")?;
 
@@ -292,7 +363,16 @@ impl Parser {
             }
             TokenType::Identifier => {
                 let name = next_token.value.ok_or("标识符缺少名称")?;
-                Ok(Expression::Var(name))
+                if self.match_token(TokenType::LeftParen) {
+                    let exp_vec = self.parse_argument()?;
+                    self.consume(TokenType::RightParen)?;
+                    Ok(Expression::FuncCall {
+                        name: name,
+                        args: exp_vec,
+                    })
+                } else {
+                    Ok(Expression::Var(name))
+                }
             }
             TokenType::LeftParen => {
                 let exp = self.parse_exp(0)?; // 括号内重置优先级。

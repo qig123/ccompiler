@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::{
     UniqueNameGenerator,
     frontend::c_ast::{
-        Block, BlockItem, Declaration, Expression, ForInit, Function, Program, Statement,
+        Block, BlockItem, Declaration, Expression, ForInit, FunDecl, Program, Statement,
     },
 };
 
@@ -20,19 +20,19 @@ impl<'a> ResloveVar<'a> {
         }
     }
     pub fn reslove_prgram(&mut self, ast: &Program) -> Result<Program, String> {
-        let mut fs: Vec<Function> = Vec::new();
+        let mut fs: Vec<FunDecl> = Vec::new();
         for f in &ast.functions {
             let new_f = self.reslove_function(f)?;
             fs.push(new_f);
         }
         Ok(Program { functions: fs })
     }
-    fn reslove_function(&mut self, f: &Function) -> Result<Function, String> {
-        let b = self.reslove_block(&f.body)?;
-        Ok(Function {
+    fn reslove_function(&mut self, f: &FunDecl) -> Result<FunDecl, String> {
+        let b = self.reslove_block(&f.body.clone().unwrap())?;
+        Ok(FunDecl {
             name: f.name.clone(),
             parameters: f.parameters.clone(),
-            body: b,
+            body: Some(b),
         })
     }
     fn reslove_block(&mut self, blocks: &Block) -> Result<Block, String> {
@@ -60,23 +60,16 @@ impl<'a> ResloveVar<'a> {
         }
     }
     fn reslove_dec(&mut self, d: &Declaration) -> Result<Declaration, String> {
-        if self.check_variable_in_current_env(&d.name) {
-            return Err("Duplicate variable declaration".to_string());
-        }
-        let new_name = self.name_gen.new_variable_name(d.name.clone());
-        self.insert_new_variable(d.name.clone(), new_name.clone());
-        match &d.init {
-            None => Ok(Declaration {
-                name: new_name,
-                init: None,
-            }),
-            Some(box_e) => {
-                let new_e = self.reslove_exp(&*box_e)?;
-                Ok(Declaration {
-                    name: new_name.clone(),
-                    init: Some(Box::new(new_e)),
-                })
+        match d {
+            Declaration::Variable(f) => {
+                if self.check_variable_in_current_env(&f.name) {
+                    return Err("Duplicate variable declaration".to_string());
+                }
+                let new_name = self.name_gen.new_variable_name(f.name.clone());
+                self.insert_new_variable(f.name.clone(), new_name.clone());
+                panic!()
             }
+            _ => panic!(),
         }
     }
     fn reslove_statement(&mut self, d: &Statement) -> Result<Statement, String> {
@@ -175,8 +168,9 @@ impl<'a> ResloveVar<'a> {
     fn reslove_forinit(&mut self, init: &ForInit) -> Result<ForInit, String> {
         match init {
             ForInit::InitDecl(d) => {
-                let new_d = self.reslove_dec(d)?;
-                Ok(ForInit::InitDecl(new_d))
+                // let new_d = self.reslove_dec(d)?;
+                // Ok(ForInit::InitDecl(new_d))
+                panic!()
             }
             ForInit::InitExp(e) => {
                 if let Some(item) = e {
@@ -243,6 +237,7 @@ impl<'a> ResloveVar<'a> {
                     right: Box::new(new_right),
                 })
             }
+            _ => panic!(),
         }
     }
     fn find_variable_in_env(&self, name: &str) -> Option<String> {
