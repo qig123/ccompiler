@@ -108,7 +108,7 @@ impl<'a> LoopLabeling<'a> {
             Statement::While {
                 condition, body, ..
             } => {
-                let loop_label = self.name_gen.new_temp_label("loop");
+                let loop_label = self.name_gen.new_loop_label("loop");
                 self.loop_stack.push(loop_label.clone());
 
                 let new_body = self.label_loops_in_statement(body)?;
@@ -125,7 +125,7 @@ impl<'a> LoopLabeling<'a> {
             Statement::DoWhile {
                 body, condition, ..
             } => {
-                let loop_label = self.name_gen.new_temp_label("loop");
+                let loop_label = self.name_gen.new_loop_label("loop");
                 self.loop_stack.push(loop_label.clone());
 
                 let new_body = self.label_loops_in_statement(body)?;
@@ -146,7 +146,7 @@ impl<'a> LoopLabeling<'a> {
                 body,
                 ..
             } => {
-                let loop_label = self.name_gen.new_temp_label("loop");
+                let loop_label = self.name_gen.new_loop_label("loop");
                 self.loop_stack.push(loop_label.clone());
 
                 let new_body = self.label_loops_in_statement(body)?;
