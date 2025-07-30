@@ -7,13 +7,13 @@ use crate::{
 
 //src/frontend/validate.rs
 pub struct Validate<'a> {
-    variable_map: HashMap<String, String>,
+    variable_map: Vec<HashMap<String, String>>, //env chain
     name_gen: &'a mut UniqueNameGenerator,
 }
 impl<'a> Validate<'a> {
     pub fn new(g: &'a mut UniqueNameGenerator) -> Self {
         Validate {
-            variable_map: HashMap::new(),
+            variable_map: Vec::new(),
             name_gen: g,
         }
     }
@@ -26,17 +26,24 @@ impl<'a> Validate<'a> {
         Ok(Program { functions: fs })
     }
     fn reslove_function(&mut self, f: &Function) -> Result<Function, String> {
-        let mut bs: Vec<BlockItem> = Vec::new();
-
-        for b in &f.body.0 {
-            let b = self.reslove_blockitem(b)?;
-            bs.push(b);
-        }
+        let b = self.reslove_block(&f.body)?;
         Ok(Function {
             name: f.name.clone(),
             parameters: f.parameters.clone(),
-            body: Block(bs),
+            body: b,
         })
+    }
+    fn reslove_block(&mut self, blocks: &Block) -> Result<Block, String> {
+        let map = HashMap::new();
+        self.variable_map.push(map);
+        let mut bs: Vec<BlockItem> = Vec::new();
+
+        for b in &blocks.0 {
+            let b = self.reslove_blockitem(&b)?;
+            bs.push(b);
+        }
+        self.variable_map.pop();
+        Ok(Block(bs))
     }
     fn reslove_blockitem(&mut self, b: &BlockItem) -> Result<BlockItem, String> {
         match b {
@@ -51,11 +58,11 @@ impl<'a> Validate<'a> {
         }
     }
     fn reslove_dec(&mut self, d: &Declaration) -> Result<Declaration, String> {
-        if self.variable_map.contains_key(&d.name) {
+        if self.check_variable_in_current_env(&d.name) {
             return Err("Duplicate variable declaration".to_string());
         }
         let new_name = self.name_gen.new_variable_name(d.name.clone());
-        self.variable_map.insert(d.name.clone(), new_name.clone());
+        self.insert_new_variable(d.name.clone(), new_name.clone());
         match &d.init {
             None => Ok(Declaration {
                 name: new_name,
@@ -101,8 +108,9 @@ impl<'a> Validate<'a> {
                     else_stmt: new_right,
                 })
             }
-            _ => {
-                panic!()
+            Statement::Compound(b) => {
+                let b = self.reslove_block(b)?;
+                Ok(Statement::Compound(b))
             }
         }
     }
@@ -123,9 +131,8 @@ impl<'a> Validate<'a> {
                 }
             },
             Expression::Var(id) => {
-                if self.variable_map.contains_key(id) {
-                    let new_id = self.variable_map.get(id).unwrap();
-                    return Ok(Expression::Var(new_id.clone()));
+                if let Some(item) = self.find_variable_in_env(id) {
+                    return Ok(Expression::Var(item));
                 } else {
                     return Err("Undeclared variable!".to_string());
                 }
@@ -162,6 +169,28 @@ impl<'a> Validate<'a> {
                     right: Box::new(new_right),
                 })
             }
+        }
+    }
+    fn find_variable_in_env(&self, name: &str) -> Option<String> {
+        for m in self.variable_map.iter().rev() {
+            if m.contains_key(name) {
+                return m.get(name).cloned();
+            }
+        }
+        None
+    }
+    fn check_variable_in_current_env(&self, name: &str) -> bool {
+        let m = self.variable_map.last();
+        if let Some(item) = m {
+            return item.contains_key(name);
+        }
+        false
+    }
+
+    fn insert_new_variable(&mut self, old: String, new: String) {
+        let m = self.variable_map.last_mut();
+        if let Some(item) = m {
+            item.insert(old, new);
         }
     }
 }
