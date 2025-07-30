@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     UniqueNameGenerator,
-    frontend::c_ast::{BlockItem, Declaration, Expression, Function, Program, Statement},
+    frontend::c_ast::{Block, BlockItem, Declaration, Expression, Function, Program, Statement},
 };
 
 //src/frontend/validate.rs
@@ -28,14 +28,14 @@ impl<'a> Validate<'a> {
     fn reslove_function(&mut self, f: &Function) -> Result<Function, String> {
         let mut bs: Vec<BlockItem> = Vec::new();
 
-        for b in &f.body {
+        for b in &f.body.0 {
             let b = self.reslove_blockitem(b)?;
             bs.push(b);
         }
         Ok(Function {
             name: f.name.clone(),
             parameters: f.parameters.clone(),
-            body: bs,
+            body: Block(bs),
         })
     }
     fn reslove_blockitem(&mut self, b: &BlockItem) -> Result<BlockItem, String> {
@@ -100,6 +100,9 @@ impl<'a> Validate<'a> {
                     then_stmt: Box::new(new_left),
                     else_stmt: new_right,
                 })
+            }
+            _ => {
+                panic!()
             }
         }
     }

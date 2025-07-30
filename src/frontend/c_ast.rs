@@ -11,7 +11,7 @@ pub struct Program {
 pub struct Function {
     pub name: String,
     pub parameters: Vec<String>,
-    pub body: Vec<BlockItem>,
+    pub body: Block,
 }
 #[derive(Debug, Clone)]
 pub enum BlockItem {
@@ -23,6 +23,8 @@ pub struct Declaration {
     pub name: String,
     pub init: Option<Box<Expression>>,
 }
+#[derive(Debug, Clone)]
+pub struct Block(pub Vec<BlockItem>);
 
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -34,6 +36,7 @@ pub enum Statement {
         then_stmt: Box<Statement>,
         else_stmt: Option<Box<Statement>>,
     },
+    Compound(Block),
 }
 
 #[derive(Debug, Clone)]
@@ -143,19 +146,21 @@ impl AstNode for Function {
             .unwrap();
 
         printer.indent();
-        if !self.body.is_empty() {
-            printer.writeln("Body").unwrap();
-            printer.indent();
-            for item in &self.body {
-                item.pretty_print(printer); // 打印 BlockItem
-            }
-            printer.unindent();
+        self.body.pretty_print(printer);
+        printer.unindent();
+    }
+}
+impl AstNode for Block {
+    fn pretty_print(&self, printer: &mut PrettyPrinter) {
+        printer.writeln("Block").unwrap();
+        printer.indent();
+        for item in &self.0 {
+            item.pretty_print(printer);
         }
         printer.unindent();
     }
 }
 
-// 优化: 为 BlockItem 实现 pretty_print
 impl AstNode for BlockItem {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
@@ -204,7 +209,6 @@ impl AstNode for Statement {
                 printer.unindent();
             }
             Statement::Null => {
-                // 优化: 使用更具描述性的名称
                 printer.writeln("NullStatement(;)").unwrap();
             }
             Statement::If {
@@ -236,6 +240,12 @@ impl AstNode for Statement {
                 }
 
                 printer.unindent(); // 恢复整体缩进
+            }
+            Statement::Compound(b) => {
+                printer.writeln("Compound Stmt").unwrap();
+                printer.indent();
+                b.pretty_print(printer);
+                printer.unindent();
             }
         }
     }

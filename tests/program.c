@@ -1,5 +1,8 @@
 int main(void) {
-  int a = 1 ? 2 : 3;
+  int a = 2;
+  {
+    int b = a + 2;
+  }
 
   return 0;
 }

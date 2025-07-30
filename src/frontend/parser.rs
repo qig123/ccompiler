@@ -4,7 +4,7 @@ use std::iter::Peekable;
 use std::vec::IntoIter;
 
 use crate::frontend::c_ast::{
-    BinaryOp, BlockItem, Declaration, Expression, Function, Program, Statement, UnaryOp,
+    BinaryOp, Block, BlockItem, Declaration, Expression, Function, Program, Statement, UnaryOp,
 };
 use crate::frontend::lexer::{Token, TokenType};
 
@@ -37,7 +37,7 @@ impl Parser {
         })
     }
 
-    /// <function> ::= "int" <identifier> "(" "void" ")" "{" {<block-item>} "}"
+    /// <function> ::= "int" <identifier> "(" "void" ")" <block>
     fn parse_function(&mut self) -> Result<Function, String> {
         self.consume(TokenType::Int)?;
         let name_token = self.consume(TokenType::Identifier)?;
@@ -48,20 +48,26 @@ impl Parser {
         self.consume(TokenType::LeftParen)?;
         self.consume(TokenType::Void)?;
         self.consume(TokenType::RightParen)?;
-        self.consume(TokenType::LeftBrace)?;
-
-        let mut body = Vec::new();
-        while !self.check(TokenType::RightBrace) {
-            body.push(self.parse_block_item()?);
+        if self.check(TokenType::LeftBrace) {
+            self.consume(TokenType::LeftBrace)?;
+            let body = self.parse_block()?;
+            Ok(Function {
+                name,
+                parameters: Vec::new(),
+                body: body,
+            })
+        } else {
+            return Err("期待一个代码块".to_string());
         }
-
+    }
+    //<block> ::= "{" {<block-item>} "}"
+    fn parse_block(&mut self) -> Result<Block, String> {
+        let mut items = Vec::new();
+        while !self.check(TokenType::RightBrace) {
+            items.push(self.parse_block_item()?);
+        }
         self.consume(TokenType::RightBrace)?;
-
-        Ok(Function {
-            name,
-            parameters: Vec::new(),
-            body,
-        })
+        Ok(Block(items))
     }
 
     //<block-item> ::= <statement> | <declaration>
@@ -114,6 +120,9 @@ impl Parser {
                 then_stmt: Box::new(then_stmt),
                 else_stmt: else_stmt,
             })
+        } else if self.match_token(TokenType::LeftBrace) {
+            let b = self.parse_block()?;
+            Ok(Statement::Compound(b))
         } else {
             let expr = self.parse_exp(0)?;
             self.consume(TokenType::Semicolon)?;

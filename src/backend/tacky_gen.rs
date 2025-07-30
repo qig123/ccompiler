@@ -22,7 +22,7 @@ impl<'a> TackyGenerator<'a> {
         let mut fs = Vec::new();
         for item in &c_ast.functions {
             let mut all_instructions = Vec::new();
-            for statement in &item.body {
+            for statement in &item.body.0 {
                 match statement {
                     BlockItem::D(d) => {
                         let ins = self.generate_tacky_decl(d)?;
@@ -149,6 +149,9 @@ impl<'a> TackyGenerator<'a> {
                     }
                 }
                 Ok(instructions)
+            }
+            _ => {
+                panic!()
             }
         }
     }
