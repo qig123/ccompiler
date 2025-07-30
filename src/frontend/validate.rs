@@ -112,6 +112,7 @@ impl<'a> Validate<'a> {
                 let b = self.reslove_block(b)?;
                 Ok(Statement::Compound(b))
             }
+            _ => panic!(),
         }
     }
 

@@ -4,7 +4,8 @@ use std::iter::Peekable;
 use std::vec::IntoIter;
 
 use crate::frontend::c_ast::{
-    BinaryOp, Block, BlockItem, Declaration, Expression, Function, Program, Statement, UnaryOp,
+    BinaryOp, Block, BlockItem, Declaration, Expression, ForInit, Function, Program, Statement,
+    UnaryOp,
 };
 use crate::frontend::lexer::{Token, TokenType};
 
@@ -94,6 +95,18 @@ impl Parser {
         self.consume(TokenType::Semicolon)?;
         Ok(Declaration { name, init })
     }
+    //<for-init> ::= <declaration> | [<exp>] ";"
+    fn parse_forinit(&mut self) -> Result<ForInit, String> {
+        if self.check(TokenType::Int) {
+            Ok(ForInit::InitDecl(self.parse_declaration()?))
+        } else if self.match_token(TokenType::Semicolon) {
+            Ok(ForInit::InitExp(None))
+        } else {
+            let e = self.parse_exp(0)?;
+            self.consume(TokenType::Semicolon)?;
+            Ok(ForInit::InitExp(Some(e)))
+        }
+    }
 
     /// <statement> ::= "return" <exp> ";" | <exp> ";" | ";"|"if" "(" <exp> ")" <statement> ["else" <statement>]
     fn parse_statement(&mut self) -> Result<Statement, String> {
@@ -123,6 +136,57 @@ impl Parser {
         } else if self.match_token(TokenType::LeftBrace) {
             let b = self.parse_block()?;
             Ok(Statement::Compound(b))
+        } else if self.match_token(TokenType::Break) {
+            self.consume(TokenType::Semicolon)?;
+            Ok(Statement::Break("fakelabel".to_string()))
+        } else if self.match_token(TokenType::Continue) {
+            self.consume(TokenType::Semicolon)?;
+            Ok(Statement::Continue("fakelabel".to_string()))
+        } else if self.match_token(TokenType::While) {
+            self.consume(TokenType::LeftParen)?;
+            let c = self.parse_exp(0)?;
+            self.consume(TokenType::RightParen)?;
+            let body = self.parse_statement()?;
+            Ok(Statement::While {
+                condition: c,
+                body: Box::new(body),
+            })
+        } else if self.match_token(TokenType::Do) {
+            let body = self.parse_statement()?;
+            self.consume(TokenType::While)?;
+            self.consume(TokenType::LeftParen)?;
+            let c = self.parse_exp(0)?;
+            self.consume(TokenType::RightParen)?;
+            self.consume(TokenType::Semicolon)?;
+            Ok(Statement::DoWhile {
+                body: Box::new(body),
+                condition: c,
+            })
+        } else if self.match_token(TokenType::For) {
+            self.consume(TokenType::LeftParen)?;
+            let init = self.parse_forinit()?;
+            let condition;
+            let post;
+            if self.match_token(TokenType::Semicolon) {
+                condition = None;
+            } else {
+                condition = Some(self.parse_exp(0)?);
+                self.consume(TokenType::Semicolon)?;
+            }
+            if self.match_token(TokenType::RightParen) {
+                post = None;
+            } else {
+                post = Some(self.parse_exp(0)?);
+                self.consume(TokenType::RightParen)?;
+            }
+            let body = self.parse_statement()?;
+
+            Ok(Statement::For {
+                init: init,
+                condition: condition,
+                post: post,
+                body: Box::new(body),
+            })
         } else {
             let expr = self.parse_exp(0)?;
             self.consume(TokenType::Semicolon)?;

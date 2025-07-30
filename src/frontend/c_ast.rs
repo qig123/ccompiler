@@ -25,7 +25,11 @@ pub struct Declaration {
 }
 #[derive(Debug, Clone)]
 pub struct Block(pub Vec<BlockItem>);
-
+#[derive(Debug, Clone)]
+pub enum ForInit {
+    InitDecl(Declaration),
+    InitExp(Option<Expression>),
+}
 #[derive(Debug, Clone)]
 pub enum Statement {
     Return(Expression),
@@ -37,6 +41,22 @@ pub enum Statement {
         else_stmt: Option<Box<Statement>>,
     },
     Compound(Block),
+    Break(String),
+    Continue(String),
+    While {
+        condition: Expression,
+        body: Box<Statement>,
+    },
+    DoWhile {
+        body: Box<Statement>,
+        condition: Expression,
+    },
+    For {
+        init: ForInit,
+        condition: Option<Expression>,
+        post: Option<Expression>,
+        body: Box<Statement>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -87,7 +107,6 @@ pub enum BinaryOp {
     Greater,
 }
 
-// --- Display Trait 实现 (与您版本相同，此处省略) ---
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -117,8 +136,6 @@ impl fmt::Display for BinaryOp {
         }
     }
 }
-
-// --- AstNode Trait (Pretty Printer) 实现 ---
 
 impl AstNode for Program {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
@@ -164,30 +181,47 @@ impl AstNode for Block {
 impl AstNode for BlockItem {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         match self {
-            // 直接委托给内部的 Statement 或 Declaration
             BlockItem::S(s) => s.pretty_print(printer),
             BlockItem::D(d) => d.pretty_print(printer),
         }
     }
 }
 
-// 优化: 为 Declaration 实现 pretty_print
 impl AstNode for Declaration {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
-        // 检查是否有初始化表达式
         if let Some(init_expr) = &self.init {
-            // 如果有，打印一个更详细的节点信息
             printer
                 .writeln(&format!("Declare(name: \"{}\", with init)", self.name))
                 .unwrap();
             printer.indent();
-            init_expr.pretty_print(printer); // 打印初始化表达式的子树
+            init_expr.pretty_print(printer);
             printer.unindent();
         } else {
-            // 如果没有，只打印变量名
             printer
                 .writeln(&format!("Declare(name: \"{}\")", self.name))
                 .unwrap();
+        }
+    }
+}
+impl AstNode for ForInit {
+    fn pretty_print(&self, printer: &mut PrettyPrinter) {
+        match self {
+            ForInit::InitDecl(decl) => {
+                printer.writeln("ForInitDecl").unwrap();
+                printer.indent();
+                decl.pretty_print(printer);
+                printer.unindent();
+            }
+            ForInit::InitExp(opt_expr) => {
+                printer.writeln("ForInitExp").unwrap();
+                printer.indent();
+                if let Some(expr) = opt_expr {
+                    expr.pretty_print(printer);
+                } else {
+                    printer.writeln("EmptyInit").unwrap();
+                }
+                printer.unindent();
+            }
         }
     }
 }
@@ -202,7 +236,6 @@ impl AstNode for Statement {
                 printer.unindent();
             }
             Statement::Expression(e) => {
-                // 优化: 明确这是一个表达式语句
                 printer.writeln("ExpressionStatement").unwrap();
                 printer.indent();
                 e.pretty_print(printer);
@@ -217,21 +250,18 @@ impl AstNode for Statement {
                 else_stmt,
             } => {
                 printer.writeln("IfStatement").unwrap();
-                printer.indent(); // 整体缩进
+                printer.indent();
 
-                // 1. 打印 Condition 分支
                 printer.writeln("Condition").unwrap();
                 printer.indent();
                 condition.pretty_print(printer);
                 printer.unindent();
 
-                // 2. 打印 Then 分支
                 printer.writeln("Then").unwrap();
                 printer.indent();
                 then_stmt.pretty_print(printer);
                 printer.unindent();
 
-                // 3. 打印 Else 分支 (如果存在)
                 if let Some(else_s) = else_stmt {
                     printer.writeln("Else").unwrap();
                     printer.indent();
@@ -239,12 +269,89 @@ impl AstNode for Statement {
                     printer.unindent();
                 }
 
-                printer.unindent(); // 恢复整体缩进
+                printer.unindent();
             }
             Statement::Compound(b) => {
-                printer.writeln("Compound Stmt").unwrap();
+                printer.writeln("CompoundStatement").unwrap();
                 printer.indent();
                 b.pretty_print(printer);
+                printer.unindent();
+            }
+            Statement::Break(_) => {
+                printer.writeln("BreakStatement").unwrap();
+            }
+            Statement::Continue(_) => {
+                printer.writeln("ContinueStatement").unwrap();
+            }
+            Statement::While { condition, body } => {
+                printer.writeln("WhileStatement").unwrap();
+                printer.indent();
+
+                printer.writeln("Condition").unwrap();
+                printer.indent();
+                condition.pretty_print(printer);
+                printer.unindent();
+
+                printer.writeln("Body").unwrap();
+                printer.indent();
+                body.pretty_print(printer);
+                printer.unindent();
+
+                printer.unindent();
+            }
+            Statement::DoWhile { body, condition } => {
+                printer.writeln("DoWhileStatement").unwrap();
+                printer.indent();
+
+                printer.writeln("Body").unwrap();
+                printer.indent();
+                body.pretty_print(printer);
+                printer.unindent();
+
+                printer.writeln("Condition").unwrap();
+                printer.indent();
+                condition.pretty_print(printer);
+                printer.unindent();
+
+                printer.unindent();
+            }
+            Statement::For {
+                init,
+                condition,
+                post,
+                body,
+            } => {
+                printer.writeln("ForStatement").unwrap();
+                printer.indent();
+
+                printer.writeln("Init").unwrap();
+                printer.indent();
+                init.pretty_print(printer);
+                printer.unindent();
+
+                printer.writeln("Condition").unwrap();
+                printer.indent();
+                if let Some(cond_expr) = condition {
+                    cond_expr.pretty_print(printer);
+                } else {
+                    printer.writeln("EmptyCondition").unwrap();
+                }
+                printer.unindent();
+
+                printer.writeln("Post-Expression").unwrap();
+                printer.indent();
+                if let Some(post_expr) = post {
+                    post_expr.pretty_print(printer);
+                } else {
+                    printer.writeln("EmptyPostExpression").unwrap();
+                }
+                printer.unindent();
+
+                printer.writeln("Body").unwrap();
+                printer.indent();
+                body.pretty_print(printer);
+                printer.unindent();
+
                 printer.unindent();
             }
         }
@@ -285,26 +392,24 @@ impl AstNode for Expression {
                 left,
                 right,
             } => {
-                // 1. 打印节点本身的类型
                 printer.writeln("Conditional(op: '? :')").unwrap();
-                // 2. 增加一级缩进，为所有子节点做准备
                 printer.indent();
-                // 3. 打印 Condition 分支，并为其子树增加额外缩进
+
                 printer.writeln("Condition").unwrap();
                 printer.indent();
                 condition.pretty_print(printer);
                 printer.unindent();
-                // 4. 打印 Then 分支 (left)，并为其子树增加额外缩进
+
                 printer.writeln("Then").unwrap();
                 printer.indent();
                 left.pretty_print(printer);
                 printer.unindent();
-                // 5. 打印 Else 分支 (right)，并为其子树增加额外缩进
+
                 printer.writeln("Else").unwrap();
                 printer.indent();
                 right.pretty_print(printer);
                 printer.unindent();
-                // 6. 恢复到上一级缩进
+
                 printer.unindent();
             }
         }

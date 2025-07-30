@@ -1,14 +1,9 @@
 int main(void) {
-     int x = 1;
-     {
-           int x = 2;
-           if (x > 1) {
-                 x = 3;
-                 int x = 4;
-             
-    }
-           return x;
-       
-  }
-     return x;
+  int a = 12345;
+  int i;
+
+  for (i = 5; i >= 0; i = i - 1)
+    a = a / 3;
+
+  return a;
 }

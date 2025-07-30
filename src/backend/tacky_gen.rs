@@ -157,6 +157,7 @@ impl<'a> TackyGenerator<'a> {
                 }
                 Ok(instructions)
             }
+            _ => panic!(),
         }
     }
 
