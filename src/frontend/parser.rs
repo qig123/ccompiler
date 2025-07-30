@@ -99,7 +99,7 @@ impl Parser {
             let body = self.parse_block()?;
             Ok(FunDecl {
                 name,
-                parameters: params, // BUG修复：之前这里是 Vec::new()
+                parameters: params,
                 body: Some(body),
             })
         }
@@ -196,7 +196,6 @@ impl Parser {
                 else_stmt,
             })
         } else if self.check(TokenType::LeftBrace) {
-            // 修正: parse_block 现在自己处理 '{'，所以这里只检查，不消耗
             let b = self.parse_block()?;
             Ok(Statement::Compound(b))
         } else if self.match_token(TokenType::Break) {
@@ -266,9 +265,6 @@ impl Parser {
         let mut left = self.parse_prefix()?;
 
         loop {
-            // 通过 peek 获取下一个 token 的类型，但**不**持有对它的引用，
-            // 以避免在调用 self 的其他方法时出现借用冲突。
-            // TokenType 应该是 Copy 的，所以这里只是一个廉价的拷贝。
             let next_token_type = if let Some(token) = self.tokens.peek() {
                 token.type_.clone()
             } else {
