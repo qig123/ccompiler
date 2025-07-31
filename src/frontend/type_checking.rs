@@ -74,8 +74,7 @@ impl TypeChecker {
             }
         }
 
-        // 更新或插入函数信息到全局表
-        // 使用 entry API 更高效
+        //一个函数一旦被认为是“已定义”（即编译器见过了它的函数体 {...}），那么这个状态就永远不能变回“未定义”。它是一个单向的状态变化。
         let defined_status = self
             .symbol_tables
             .get(&f.name)
@@ -88,7 +87,6 @@ impl TypeChecker {
             },
         );
 
-        // 如果有函数体，才需要处理参数和局部作用域
         if let Some(body_block) = &f.body {
             self.push_scope(); // 为函数体创建一个新的作用域
 
@@ -123,6 +121,81 @@ impl TypeChecker {
             self.typecheck_expression(e)?
         }
         Ok(())
+    }
+    fn typecheck_block_body(&mut self, block: &Block) -> Result<(), String> {
+        for item in &block.0 {
+            self.typecheck_block_item(item)?;
+        }
+        Ok(())
+    }
+
+    fn typecheck_block_item(&mut self, item: &BlockItem) -> Result<(), String> {
+        match item {
+            BlockItem::D(d) => self.typecheck_declaration(d),
+            BlockItem::S(s) => self.typecheck_statement(s),
+        }
+    }
+
+    fn typecheck_declaration(&mut self, d: &Declaration) -> Result<(), String> {
+        match d {
+            Declaration::Variable(v) => self.typecheck_variable_declaration(v),
+            Declaration::Fun(f) => self.typecheck_function_decl(f),
+        }
+    }
+
+    fn typecheck_statement(&mut self, stmt: &Statement) -> Result<(), String> {
+        match stmt {
+            Statement::Compound(b) => {
+                self.push_scope();
+                self.typecheck_block_body(b)?;
+                self.pop_scope();
+                Ok(())
+            }
+            Statement::For {
+                init,
+                condition,
+                post,
+                body,
+                ..
+            } => {
+                self.push_scope();
+                self.resolve_for_init(init)?;
+                if let Some(c) = condition {
+                    self.typecheck_expression(c)?;
+                }
+                if let Some(p) = post {
+                    self.typecheck_expression(p)?;
+                }
+                self.typecheck_statement(body)?;
+                self.pop_scope();
+                Ok(())
+            }
+            // 其他语句...
+            Statement::Expression(e) => self.typecheck_expression(e),
+            Statement::Return(e) => self.typecheck_expression(e),
+            Statement::If {
+                condition,
+                then_stmt,
+                else_stmt,
+            } => {
+                self.typecheck_expression(condition)?;
+                self.typecheck_statement(then_stmt)?;
+                if let Some(es) = else_stmt {
+                    self.typecheck_statement(es)?;
+                }
+                Ok(())
+            }
+            // ...
+            _ => Ok(()),
+        }
+    }
+
+    fn resolve_for_init(&mut self, init: &ForInit) -> Result<(), String> {
+        match init {
+            ForInit::InitDecl(d) => self.typecheck_variable_declaration(d),
+            ForInit::InitExp(Some(e)) => self.typecheck_expression(e),
+            ForInit::InitExp(None) => Ok(()),
+        }
     }
 
     fn typecheck_expression(&mut self, e: &Expression) -> Result<(), String> {
@@ -236,81 +309,5 @@ impl TypeChecker {
 
     fn pop_scope(&mut self) {
         self.scopes.pop();
-    }
-
-    fn typecheck_block_body(&mut self, block: &Block) -> Result<(), String> {
-        for item in &block.0 {
-            self.typecheck_block_item(item)?;
-        }
-        Ok(())
-    }
-
-    fn typecheck_block_item(&mut self, item: &BlockItem) -> Result<(), String> {
-        match item {
-            BlockItem::D(d) => self.typecheck_declaration(d),
-            BlockItem::S(s) => self.typecheck_statement(s),
-        }
-    }
-
-    fn typecheck_declaration(&mut self, d: &Declaration) -> Result<(), String> {
-        match d {
-            Declaration::Variable(v) => self.typecheck_variable_declaration(v),
-            Declaration::Fun(f) => self.typecheck_function_decl(f),
-        }
-    }
-
-    fn typecheck_statement(&mut self, stmt: &Statement) -> Result<(), String> {
-        match stmt {
-            Statement::Compound(b) => {
-                self.push_scope();
-                self.typecheck_block_body(b)?;
-                self.pop_scope();
-                Ok(())
-            }
-            Statement::For {
-                init,
-                condition,
-                post,
-                body,
-                ..
-            } => {
-                self.push_scope();
-                self.resolve_for_init(init)?;
-                if let Some(c) = condition {
-                    self.typecheck_expression(c)?;
-                }
-                if let Some(p) = post {
-                    self.typecheck_expression(p)?;
-                }
-                self.typecheck_statement(body)?;
-                self.pop_scope();
-                Ok(())
-            }
-            // 其他语句...
-            Statement::Expression(e) => self.typecheck_expression(e),
-            Statement::Return(e) => self.typecheck_expression(e),
-            Statement::If {
-                condition,
-                then_stmt,
-                else_stmt,
-            } => {
-                self.typecheck_expression(condition)?;
-                self.typecheck_statement(then_stmt)?;
-                if let Some(es) = else_stmt {
-                    self.typecheck_statement(es)?;
-                }
-                Ok(())
-            }
-            // ...
-            _ => Ok(()),
-        }
-    }
-
-    fn resolve_for_init(&mut self, init: &ForInit) -> Result<(), String> {
-        match init {
-            ForInit::InitDecl(d) => self.typecheck_variable_declaration(d),
-            ForInit::InitExp(Some(e)) => self.typecheck_expression(e),
-            ForInit::InitExp(None) => Ok(()),
-        }
     }
 }

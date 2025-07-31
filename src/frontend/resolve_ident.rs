@@ -30,10 +30,10 @@
 use std::collections::HashMap;
 
 use crate::{
+    UniqueNameGenerator,
     frontend::c_ast::{
         Block, BlockItem, Declaration, Expression, ForInit, FunDecl, Program, Statement, VarDecl,
     },
-    UniqueNameGenerator,
 };
 
 /// 存储在符号表中的标识符信息。
@@ -279,7 +279,9 @@ impl<'a> IdentifierResolver<'a> {
                 let new_b = self.resolve_block(b)?;
                 Ok(Statement::Compound(new_b))
             }
-            Statement::While { condition, body, .. } => {
+            Statement::While {
+                condition, body, ..
+            } => {
                 let new_c = self.resolve_expression(condition)?;
                 let new_body = self.resolve_statement(body)?;
                 Ok(Statement::While {
@@ -288,7 +290,9 @@ impl<'a> IdentifierResolver<'a> {
                     label: None, // 标签在后续阶段处理
                 })
             }
-            Statement::DoWhile { body, condition, .. } => {
+            Statement::DoWhile {
+                body, condition, ..
+            } => {
                 let new_body = self.resolve_statement(body)?;
                 let new_c = self.resolve_expression(condition)?;
                 Ok(Statement::DoWhile {
@@ -355,7 +359,10 @@ impl<'a> IdentifierResolver<'a> {
                 // 确保赋值操作的左侧是一个有效的左值（l-value）。
                 // 在我们的简化C语言中，只有变量是有效的左值。
                 if !matches!(**left, Expression::Var(_)) {
-                    return Err("Semantic Error: Expression is not assignable (not a valid l-value).".to_string());
+                    return Err(
+                        "Semantic Error: Expression is not assignable (not a valid l-value)."
+                            .to_string(),
+                    );
                 }
                 let new_l = self.resolve_expression(left)?;
                 let new_r = self.resolve_expression(right)?;
@@ -498,12 +505,16 @@ mod tests {
     #[test]
     fn test_simple_variable_resolution() {
         let result = run_resolver_on_string("int main() { int a = 1; return a; }");
-        assert!(result.is_ok(), "Should resolve successfully, but failed: {:?}", result);
-        
+        assert!(
+            result.is_ok(),
+            "Should resolve successfully, but failed: {:?}",
+            result
+        );
+
         let resolved_ast = result.unwrap();
         let main_func = &resolved_ast.functions[0];
         let body = main_func.body.as_ref().unwrap();
-        
+
         let mangled_name = if let BlockItem::D(Declaration::Variable(var_decl)) = &body.0[0] {
             assert_ne!(var_decl.name, "a", "Variable 'a' should have been mangled.");
             var_decl.name.clone()
@@ -512,7 +523,10 @@ mod tests {
         };
 
         if let BlockItem::S(Statement::Return(Expression::Var(var_name))) = &body.0[1] {
-            assert_eq!(*var_name, mangled_name, "The returned variable should use the mangled name.");
+            assert_eq!(
+                *var_name, mangled_name,
+                "The returned variable should use the mangled name."
+            );
         } else {
             panic!("Expected a return statement as the second block item.");
         }
@@ -521,32 +535,45 @@ mod tests {
     #[test]
     fn test_scope_shadowing() {
         let result = run_resolver_on_string("int main() { int a = 1; { int a = 2; } return a; }");
-        assert!(result.is_ok(), "Shadowing should be allowed, but failed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Shadowing should be allowed, but failed: {:?}",
+            result
+        );
 
         let resolved_ast = result.unwrap();
         let main_func = &resolved_ast.functions[0];
         let main_body = main_func.body.as_ref().unwrap();
 
-        let outer_a_mangled_name = if let BlockItem::D(Declaration::Variable(var_decl)) = &main_body.0[0] {
-            var_decl.name.clone()
-        } else {
-            panic!("Expected outer variable declaration.");
-        };
+        let outer_a_mangled_name =
+            if let BlockItem::D(Declaration::Variable(var_decl)) = &main_body.0[0] {
+                var_decl.name.clone()
+            } else {
+                panic!("Expected outer variable declaration.");
+            };
 
-        let returned_var_name = if let BlockItem::S(Statement::Return(Expression::Var(var_name))) = &main_body.0[2] {
-            var_name.clone()
-        } else {
-            panic!("Expected return statement.");
-        };
+        let returned_var_name =
+            if let BlockItem::S(Statement::Return(Expression::Var(var_name))) = &main_body.0[2] {
+                var_name.clone()
+            } else {
+                panic!("Expected return statement.");
+            };
 
-        assert_eq!(outer_a_mangled_name, returned_var_name, "Return statement should refer to the outer 'a'.");
+        assert_eq!(
+            outer_a_mangled_name, returned_var_name,
+            "Return statement should refer to the outer 'a'."
+        );
     }
 
     #[test]
     fn test_legal_function_redeclaration() {
         let code = "int foo(); int foo(); int main() { return foo(); }";
         let result = run_resolver_on_string(code);
-        assert!(result.is_ok(), "Legal function redeclaration should not cause an error, but got: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Legal function redeclaration should not cause an error, but got: {:?}",
+            result
+        );
     }
 
     // --- 失败案例 ---
@@ -555,15 +582,24 @@ mod tests {
     fn test_error_on_duplicate_variable_in_same_scope() {
         let result = run_resolver_on_string("int main() { int a; int a; }");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Duplicate declaration of variable 'a'"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Duplicate declaration of variable 'a'")
+        );
     }
-    
+
     #[test]
     fn test_error_on_duplicate_parameter_and_variable() {
         let result = run_resolver_on_string("int foo(int a) { int a = 5; return a; }");
-        assert!(result.is_err(), "Expected an error for duplicate declarations, but got Ok.");
         assert!(
-            result.unwrap_err().contains("Duplicate declaration of variable 'a' in the same scope."),
+            result.is_err(),
+            "Expected an error for duplicate declarations, but got Ok."
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Duplicate declaration of variable 'a' in the same scope."),
             "Error message was not as expected."
         );
     }
@@ -572,14 +608,22 @@ mod tests {
     fn test_error_on_function_shadowing_variable() {
         let result = run_resolver_on_string("int main() { int foo; int foo(); }");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Redeclaration of 'foo' as a different kind of symbol"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Redeclaration of 'foo' as a different kind of symbol")
+        );
     }
 
     #[test]
     fn test_error_on_variable_shadowing_function() {
         let result = run_resolver_on_string("int main() { int foo(); int foo; }");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Duplicate declaration of variable 'foo'"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Duplicate declaration of variable 'foo'")
+        );
     }
 
     #[test]
@@ -593,29 +637,46 @@ mod tests {
     fn test_error_on_undeclared_variable() {
         let result = run_resolver_on_string("int main() { return x; }");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Use of undeclared identifier 'x'"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Use of undeclared identifier 'x'")
+        );
     }
 
     #[test]
     fn test_error_on_undeclared_function_call() {
         let result = run_resolver_on_string("int main() { return foo(); }");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Call to undeclared function 'foo'"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Call to undeclared function 'foo'")
+        );
     }
 
     #[test]
     fn test_error_on_nested_function_definition() {
         let result = run_resolver_on_string("int main() { int bar() { return 1; } }");
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Nested function definitions are not allowed"));
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Nested function definitions are not allowed")
+        );
     }
-    
+
     #[test]
     fn test_error_on_calling_a_variable() {
         let result = run_resolver_on_string("int main() { int x = 10; return x(); }");
-        assert!(result.is_err(), "Expected an error for calling a variable, but got Ok.");
         assert!(
-            result.unwrap_err().contains("Called object 'x' is not a function."),
+            result.is_err(),
+            "Expected an error for calling a variable, but got Ok."
+        );
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Called object 'x' is not a function."),
             "Error message was not as expected."
         );
     }
