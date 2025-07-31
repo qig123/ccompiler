@@ -22,7 +22,7 @@ impl<'a> LoopLabeling<'a> {
     pub fn label_loops_in_program(&mut self, ast: &Program) -> Result<Program, String> {
         let mut labeled_functions = Vec::new();
         for f in &ast.functions {
-            let new_f = self.label_loops_in_function(f)?;
+            let new_f = self.label_loops_in_function_decl(f)?;
             labeled_functions.push(new_f);
         }
         Ok(Program {
@@ -30,14 +30,22 @@ impl<'a> LoopLabeling<'a> {
         })
     }
 
-    fn label_loops_in_function(&mut self, f: &FunDecl) -> Result<FunDecl, String> {
+    fn label_loops_in_function_decl(&mut self, f: &FunDecl) -> Result<FunDecl, String> {
         // 函数本身不创建循环，但我们需要遍历它的 body
-        let new_body = self.label_loops_in_block(&f.body.clone().unwrap())?;
-        Ok(FunDecl {
-            name: f.name.clone(),
-            parameters: f.parameters.clone(),
-            body: Some(new_body),
-        })
+        if let Some(b) = &f.body {
+            let new_body = self.label_loops_in_block(&b)?;
+            Ok(FunDecl {
+                name: f.name.clone(),
+                parameters: f.parameters.clone(),
+                body: Some(new_body),
+            })
+        } else {
+            Ok(FunDecl {
+                name: f.name.clone(),
+                parameters: f.parameters.clone(),
+                body: None,
+            })
+        }
     }
 
     fn label_loops_in_block(&mut self, block: &Block) -> Result<Block, String> {

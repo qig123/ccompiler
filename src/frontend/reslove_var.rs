@@ -4,12 +4,16 @@ use std::collections::HashMap;
 use crate::{
     UniqueNameGenerator,
     frontend::c_ast::{
-        Block, BlockItem, Declaration, Expression, ForInit, FunDecl, Program, Statement,
+        Block, BlockItem, Declaration, Expression, ForInit, FunDecl, Program, Statement, VarDecl,
     },
 };
+pub struct Info {
+    has_linkage: bool,
+    name: String,
+}
 
 pub struct ResloveVar<'a> {
-    variable_map: Vec<HashMap<String, String>>, //env chain
+    variable_map: Vec<HashMap<String, Info>>,
     name_gen: &'a mut UniqueNameGenerator,
 }
 impl<'a> ResloveVar<'a> {
@@ -22,18 +26,75 @@ impl<'a> ResloveVar<'a> {
     pub fn reslove_prgram(&mut self, ast: &Program) -> Result<Program, String> {
         let mut fs: Vec<FunDecl> = Vec::new();
         for f in &ast.functions {
-            let new_f = self.reslove_function(f)?;
+            let new_f = self.reslove_function_decl(f)?;
             fs.push(new_f);
         }
         Ok(Program { functions: fs })
     }
-    fn reslove_function(&mut self, f: &FunDecl) -> Result<FunDecl, String> {
-        let b = self.reslove_block(&f.body.clone().unwrap())?;
-        Ok(FunDecl {
-            name: f.name.clone(),
-            parameters: f.parameters.clone(),
-            body: Some(b),
-        })
+    fn reslove_function_decl(&mut self, f: &FunDecl) -> Result<FunDecl, String> {
+        let (result, is_from_current) = self.find_variable_in_env(&f.name);
+        if let Some(i) = result {
+            if !i.has_linkage && is_from_current {
+                return Err(format!("重复声明! {}", f.name));
+            } else {
+                //这里是什么情况？map中已经有一个条目，已经确定不是变量,那一定是函数，那么这意味着什么呢，意味着出现了多个同名字的函数声明
+                //这里的处理是也添加到map中，但是不生成新名字,因为函数是唯一实体对应，同名的函数声明一定是要兼容的，指向唯一实体,所以覆盖也是正确的
+                self.insert_new_variable(
+                    f.name.clone(),
+                    Info {
+                        has_linkage: true,
+                        name: f.name.clone(),
+                    },
+                );
+            }
+        } else {
+            self.insert_new_variable(
+                f.name.clone(),
+                Info {
+                    has_linkage: true,
+                    name: f.name.clone(),
+                },
+            );
+        }
+        //解析函数参数，要新开作用域
+        let env_params = HashMap::new();
+        self.variable_map.push(env_params);
+        let mut new_params = Vec::new();
+        //这里要怎样解析？
+        for p in &f.parameters {
+            if self.check_variable_in_current_env(&p) {
+                return Err(format!(
+                    "Duplicate variable declaration in {} params",
+                    f.name.clone()
+                ));
+            }
+            let new_name = self.name_gen.new_variable_name(p.clone());
+            self.insert_new_variable(
+                p.clone(),
+                Info {
+                    has_linkage: false,
+                    name: new_name.clone(),
+                },
+            );
+            new_params.push(new_name);
+        }
+
+        if let Some(b) = &f.body {
+            let b = self.reslove_block(b)?;
+            self.variable_map.pop();
+            Ok(FunDecl {
+                name: f.name.clone(),
+                parameters: new_params,
+                body: Some(b),
+            })
+        } else {
+            self.variable_map.pop();
+            Ok(FunDecl {
+                name: f.name.clone(),
+                parameters: new_params,
+                body: None,
+            })
+        }
     }
     fn reslove_block(&mut self, blocks: &Block) -> Result<Block, String> {
         let map = HashMap::new();
@@ -61,15 +122,37 @@ impl<'a> ResloveVar<'a> {
     }
     fn reslove_dec(&mut self, d: &Declaration) -> Result<Declaration, String> {
         match d {
-            Declaration::Variable(f) => {
-                if self.check_variable_in_current_env(&f.name) {
+            Declaration::Variable(v) => {
+                if self.check_variable_in_current_env(&v.name) {
                     return Err("Duplicate variable declaration".to_string());
                 }
-                let new_name = self.name_gen.new_variable_name(f.name.clone());
-                self.insert_new_variable(f.name.clone(), new_name.clone());
-                panic!()
+                let new_name = self.name_gen.new_variable_name(v.name.clone());
+                self.insert_new_variable(
+                    v.name.clone(),
+                    Info {
+                        has_linkage: false,
+                        name: new_name.clone(),
+                    },
+                );
+                match &v.init {
+                    None => Ok(Declaration::Variable(VarDecl {
+                        name: new_name,
+                        init: None,
+                    })),
+                    Some(box_e) => {
+                        let new_e = self.reslove_exp(&box_e)?;
+                        Ok(Declaration::Variable(VarDecl {
+                            name: new_name,
+                            init: Some(new_e),
+                        }))
+                    }
+                }
             }
-            _ => panic!(),
+            //这是函数内的函数声明,这里能否判断出一定是函数声明，而不存在函数定义？
+            Declaration::Fun(f) => {
+                let new_f = self.reslove_function_decl(f)?;
+                Ok(Declaration::Fun(new_f))
+            }
         }
     }
     fn reslove_statement(&mut self, d: &Statement) -> Result<Statement, String> {
@@ -168,9 +251,31 @@ impl<'a> ResloveVar<'a> {
     fn reslove_forinit(&mut self, init: &ForInit) -> Result<ForInit, String> {
         match init {
             ForInit::InitDecl(d) => {
-                // let new_d = self.reslove_dec(d)?;
-                // Ok(ForInit::InitDecl(new_d))
-                panic!()
+                //这里应该是调用 reslove_dec的，但是我不会调用，参数好像不兼容
+                if self.check_variable_in_current_env(&d.name) {
+                    return Err("Duplicate variable declaration".to_string());
+                }
+                let new_name = self.name_gen.new_variable_name(d.name.clone());
+                self.insert_new_variable(
+                    d.name.clone(),
+                    Info {
+                        has_linkage: false,
+                        name: new_name.clone(),
+                    },
+                );
+                match &d.init {
+                    None => Ok(ForInit::InitDecl(VarDecl {
+                        name: new_name,
+                        init: None,
+                    })),
+                    Some(box_e) => {
+                        let new_e = self.reslove_exp(&box_e)?;
+                        Ok(ForInit::InitDecl(VarDecl {
+                            name: new_name,
+                            init: Some(new_e),
+                        }))
+                    }
+                }
             }
             ForInit::InitExp(e) => {
                 if let Some(item) = e {
@@ -199,8 +304,9 @@ impl<'a> ResloveVar<'a> {
                 }
             },
             Expression::Var(id) => {
-                if let Some(item) = self.find_variable_in_env(id) {
-                    return Ok(Expression::Var(item));
+                let (info, _) = self.find_variable_in_env(id);
+                if let Some(item) = info {
+                    return Ok(Expression::Var(item.name.clone()));
                 } else {
                     return Err("Undeclared variable!".to_string());
                 }
@@ -237,16 +343,46 @@ impl<'a> ResloveVar<'a> {
                     right: Box::new(new_right),
                 })
             }
-            _ => panic!(),
-        }
-    }
-    fn find_variable_in_env(&self, name: &str) -> Option<String> {
-        for m in self.variable_map.iter().rev() {
-            if m.contains_key(name) {
-                return m.get(name).cloned();
+            Expression::FuncCall { name, args } => {
+                let (info, _) = self.find_variable_in_env(name);
+                if let Some(r) = info {
+                    let new_name = r.name.clone();
+                    let mut new_args = Vec::new();
+                    for arg in args {
+                        let new_e = self.reslove_exp(arg)?;
+                        new_args.push(new_e);
+                    }
+                    return Ok(Expression::FuncCall {
+                        name: new_name.clone(),
+                        args: new_args,
+                    });
+                } else {
+                    return Err(format!("未声明函数!"));
+                }
             }
         }
-        None
+    }
+    fn find_variable_in_env(&self, name: &str) -> (Option<&Info>, bool) {
+        let mut find_count = 0;
+        for m in self.variable_map.iter().rev() {
+            find_count += 1;
+            if m.contains_key(name) {
+                let is_from_current;
+                if find_count > 1 {
+                    is_from_current = false;
+                } else {
+                    is_from_current = true;
+                }
+                return (m.get(name), is_from_current);
+            }
+        }
+        let is_from_current;
+        if find_count > 1 {
+            is_from_current = false;
+        } else {
+            is_from_current = true;
+        }
+        return (None, is_from_current);
     }
     fn check_variable_in_current_env(&self, name: &str) -> bool {
         let m = self.variable_map.last();
@@ -256,7 +392,7 @@ impl<'a> ResloveVar<'a> {
         false
     }
 
-    fn insert_new_variable(&mut self, old: String, new: String) {
+    fn insert_new_variable(&mut self, old: String, new: Info) {
         let m = self.variable_map.last_mut();
         if let Some(item) = m {
             item.insert(old, new);
