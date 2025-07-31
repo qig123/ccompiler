@@ -27,8 +27,8 @@
 //!         -   在任何循环之外使用 `continue` 语句。
 
 use crate::{
-    frontend::c_ast::{Block, BlockItem, FunDecl, Program, Statement},
     UniqueNameGenerator,
+    frontend::c_ast::{Block, BlockItem, FunDecl, Program, Statement},
 };
 
 /// 循环标签解析器的状态机。
@@ -102,8 +102,9 @@ impl<'a> LoopLabeling<'a> {
     fn label_loops_in_statement(&mut self, stmt: &Statement) -> Result<Statement, String> {
         match stmt {
             // --- 循环语句处理 ---
-
-            Statement::While { condition, body, .. } => {
+            Statement::While {
+                condition, body, ..
+            } => {
                 // 1. 为此循环生成一个新的、唯一的标签。
                 let loop_label = self.name_gen.new_loop_label("loop");
                 // 2. 将标签压入栈中，表示我们进入了一个新的循环层级。
@@ -124,7 +125,9 @@ impl<'a> LoopLabeling<'a> {
                 })
             }
 
-            Statement::DoWhile { body, condition, .. } => {
+            Statement::DoWhile {
+                body, condition, ..
+            } => {
                 let loop_label = self.name_gen.new_loop_label("loop");
                 self.loop_stack.push(loop_label.clone());
                 let new_body = self.label_loops_in_statement(body)?;
@@ -136,7 +139,13 @@ impl<'a> LoopLabeling<'a> {
                 })
             }
 
-            Statement::For { init, condition, post, body, .. } => {
+            Statement::For {
+                init,
+                condition,
+                post,
+                body,
+                ..
+            } => {
                 let loop_label = self.name_gen.new_loop_label("loop");
                 self.loop_stack.push(loop_label.clone());
                 let new_body = self.label_loops_in_statement(body)?;
@@ -151,14 +160,16 @@ impl<'a> LoopLabeling<'a> {
             }
 
             // --- Break/Continue 处理 ---
-
             Statement::Break(_) => {
                 // 检查循环栈是否为空。如果为空，说明 `break` 不在任何循环内。
                 if let Some(current_loop_label) = self.loop_stack.last() {
                     // 如果不为空，则使用栈顶的标签。
                     Ok(Statement::Break(current_loop_label.clone()))
                 } else {
-                    Err("Semantic Error: 'break' statement not in a loop or switch statement.".to_string())
+                    Err(
+                        "Semantic Error: 'break' statement not in a loop or switch statement."
+                            .to_string(),
+                    )
                 }
             }
 
@@ -171,13 +182,16 @@ impl<'a> LoopLabeling<'a> {
             }
 
             // --- 其他语句的递归处理 ---
-
             Statement::Compound(b) => {
                 let new_b = self.label_loops_in_block(b)?;
                 Ok(Statement::Compound(new_b))
             }
 
-            Statement::If { condition, then_stmt, else_stmt } => {
+            Statement::If {
+                condition,
+                then_stmt,
+                else_stmt,
+            } => {
                 let new_then = self.label_loops_in_statement(then_stmt)?;
                 let new_else = else_stmt
                     .as_ref()
