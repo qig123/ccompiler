@@ -1,6 +1,7 @@
 // src/main.rs
 
 use clap::Parser;
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,8 @@ use crate::frontend::lexer;
 use crate::frontend::loop_labeling::LoopLabeling;
 use crate::frontend::parser;
 use crate::frontend::resolve_ident::IdentifierResolver;
+use crate::frontend::type_checking::SymbolInfo;
+use crate::frontend::type_checking::TypeChecker;
 
 mod backend;
 mod common;
@@ -192,6 +195,8 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     // (3) 语义分析
     let resolved_ast = resolve_idents(&ast, &mut name_gen)?;
     let labeled_ast = label_loops(&resolved_ast, &mut name_gen)?;
+    let mut symbols = Vec::new();
+    typecheck(&labeled_ast, &mut symbols)?;
     if cli.validate {
         println!("\n--validate: 语义分析完成, 程序停止。");
         return Ok(());
@@ -299,6 +304,14 @@ fn label_loops(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, 
     let mut printer = PrettyPrinter::new(&mut stdout);
     ast.pretty_print(&mut printer);
     Ok(ast)
+}
+fn typecheck(c_ast: &Program, table: &mut Vec<HashMap<String, SymbolInfo>>) -> Result<(), String> {
+    println!("(3.3) 类型检查：...");
+    let mut resolver = TypeChecker::new(table);
+    resolver.typecheck_program(c_ast)?;
+    println!("   ✅ 类型检查完成,打印符号表");
+    println!("{:?}", table);
+    Ok(())
 }
 fn gen_ir(
     c_ast: &Program,

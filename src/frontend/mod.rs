@@ -3,3 +3,4 @@ pub mod lexer;
 pub mod loop_labeling;
 pub mod parser;
 pub mod resolve_ident;
+pub mod type_checking;
