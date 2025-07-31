@@ -1,6 +1,7 @@
 // src/main.rs
 
 use clap::Parser;
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ use crate::frontend::lexer;
 use crate::frontend::loop_labeling::LoopLabeling;
 use crate::frontend::parser;
 use crate::frontend::resolve_ident::IdentifierResolver;
+use crate::frontend::type_checking::SymbolInfo;
 use crate::frontend::type_checking::TypeChecker;
 
 mod backend;
@@ -193,7 +195,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     // (3) 语义分析
     let resolved_ast = resolve_idents(&ast, &mut name_gen)?;
     let labeled_ast = label_loops(&resolved_ast, &mut name_gen)?;
-    typecheck(&labeled_ast)?;
+    let tables = typecheck(&labeled_ast)?;
     if cli.validate {
         println!("\n--validate: 语义分析完成, 程序停止。");
         return Ok(());
@@ -214,7 +216,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     }
 
     // (6) 发射汇编代码
-    emit_assembly(&assembly_code_ast, &assembly_path)?;
+    emit_assembly(&assembly_code_ast, &assembly_path, &tables)?;
     if cli.save_assembly {
         janitor.keep(&assembly_path); // 保留汇编文件
         println!("\n-S: 保留汇编文件。");
@@ -302,13 +304,13 @@ fn label_loops(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, 
     ast.pretty_print(&mut printer);
     Ok(ast)
 }
-fn typecheck(c_ast: &Program) -> Result<(), String> {
+fn typecheck(c_ast: &Program) -> Result<HashMap<String, SymbolInfo>, String> {
     println!("(3.3) 类型检查：...");
     let resolver = TypeChecker::new();
     let tables = resolver.typecheck_program(c_ast)?;
     println!("   ✅ 类型检查完成,打印符号表");
     println!("{:?}", tables);
-    Ok(())
+    Ok(tables)
 }
 fn gen_ir(
     c_ast: &Program,
@@ -333,9 +335,13 @@ fn codegen(ir_ast: crate::backend::tacky_ir::Program) -> Result<assembly_ast::Pr
     ass_ast.pretty_print(&mut printer);
     Ok(ass_ast)
 }
-fn emit_assembly(asm_ast: &assembly_ast::Program, output_path: &Path) -> Result<(), String> {
+fn emit_assembly(
+    asm_ast: &assembly_ast::Program,
+    output_path: &Path,
+    tables: &HashMap<String, SymbolInfo>,
+) -> Result<(), String> {
     println!("(6) 汇编代码发射 -> {}", output_path.display());
-    let code_generator = CodeGenerator::new();
+    let code_generator = CodeGenerator::new(tables);
     code_generator.generate_program_to_file(asm_ast, &output_path.to_string_lossy())?;
     println!("   ✅ 汇编代码已生成。");
     Ok(())
@@ -409,9 +415,9 @@ mod tests {
             parse: false,
             validate: false,
             tacky: false,
-            codegen: true,
+            codegen: false,
             save_assembly: false,
-            compile_only: true,
+            compile_only: false,
         };
         run_compiler(cli)
     }

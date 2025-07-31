@@ -10,7 +10,7 @@ pub struct Program {
 pub struct Function {
     pub name: String,
     pub instructions: Vec<Instruction>,
-    pub stack_size: i64,
+    // pub stack_size: i64,
 }
 
 #[derive(Debug, Clone)]

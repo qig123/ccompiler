@@ -5,8 +5,8 @@ use crate::frontend::c_ast::{
 };
 #[derive(Debug, Clone, PartialEq)]
 pub struct SymbolInfo {
-    tpye: CType,
-    defined: bool,
+    pub tpye: CType,
+    pub defined: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

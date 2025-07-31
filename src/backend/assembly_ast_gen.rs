@@ -90,7 +90,7 @@ impl AssemblyGenerator {
         Ok(Function {
             name: ir_func.name.clone(),
             instructions: final_instructions,
-            stack_size,
+            // stack_size,
         })
     }
     fn generate_function_helper(

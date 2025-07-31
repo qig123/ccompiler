@@ -3,6 +3,8 @@
 use crate::backend::assembly_ast::{
     BinaryOp, ConditionCode, Function, Instruction, Operand, Program, Reg, UnaryOp,
 };
+use crate::frontend::type_checking::SymbolInfo;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 
@@ -14,13 +16,16 @@ const LOCAL_LABEL_PREFIX: &str = ".L";
 pub enum InstructionSuffix {
     Byte, // 8位，例如 %al
     Long, // 32位，例如 %eax (对应 'l' 后缀)
+    Q,    //64
 }
 
-pub struct CodeGenerator {}
+pub struct CodeGenerator<'a> {
+    tables: &'a HashMap<String, SymbolInfo>,
+}
 
-impl CodeGenerator {
-    pub fn new() -> Self {
-        CodeGenerator {}
+impl<'a> CodeGenerator<'a> {
+    pub fn new(tables: &'a HashMap<String, SymbolInfo>) -> Self {
+        CodeGenerator { tables }
     }
 
     pub fn generate_program_to_file(
@@ -146,7 +151,25 @@ impl CodeGenerator {
                 // 标签不缩进。
                 writeln!(writer, "{}{}:", LOCAL_LABEL_PREFIX, t)
             }
-            _ => panic!(),
+            Instruction::DeallocateStack(i) => {
+                self.emit_indented(&format!("addq ${} ,%rsp", i), writer)
+            }
+            Instruction::Push(operand) => {
+                let opr = self.format_operand(operand, InstructionSuffix::Q);
+                self.emit_indented(&format!("pushq {} ", opr), writer)
+            }
+            Instruction::Call(name) => {
+                if self.tables.contains_key(name) {
+                    let r = self.tables.get(name).unwrap();
+                    if r.defined {
+                        self.emit_indented(&format!("call {} ", name), writer)
+                    } else {
+                        self.emit_indented(&format!("call {}@PLT", name), writer)
+                    }
+                } else {
+                    self.emit_indented(&format!("call {}@PLT", name), writer)
+                }
+            }
         }
     }
 
@@ -182,19 +205,49 @@ impl CodeGenerator {
     }
 
     /// 根据大小格式化寄存器，返回正确的名称。
-    fn format_reg(&self, reg: &Reg, size: InstructionSuffix) -> String {
+    pub fn format_reg(&self, reg: &Reg, size: InstructionSuffix) -> String {
         let name = match (reg, size) {
-            // 8位寄存器 (Byte)
-            (Reg::AX, InstructionSuffix::Byte) => "%al",
-            (Reg::DX, InstructionSuffix::Byte) => "%dl",
-            (Reg::R10, InstructionSuffix::Byte) => "%r10b",
-            (Reg::R11, InstructionSuffix::Byte) => "%r11b",
-            // 32位寄存器 (Long)
+            // --- 64-bit (Quad-word) Registers ---
+            (Reg::AX, InstructionSuffix::Q) => "%rax",
+            (Reg::CX, InstructionSuffix::Q) => "%rcx",
+            (Reg::DX, InstructionSuffix::Q) => "%rdx",
+            (Reg::DI, InstructionSuffix::Q) => "%rdi",
+            (Reg::SI, InstructionSuffix::Q) => "%rsi",
+            (Reg::R8, InstructionSuffix::Q) => "%r8",
+            (Reg::R9, InstructionSuffix::Q) => "%r9",
+            (Reg::R10, InstructionSuffix::Q) => "%r10",
+            (Reg::R11, InstructionSuffix::Q) => "%r11",
+
+            // --- 32-bit (Long-word) Registers ---
             (Reg::AX, InstructionSuffix::Long) => "%eax",
+            (Reg::CX, InstructionSuffix::Long) => "%ecx",
             (Reg::DX, InstructionSuffix::Long) => "%edx",
+            (Reg::DI, InstructionSuffix::Long) => "%edi",
+            (Reg::SI, InstructionSuffix::Long) => "%esi",
+            (Reg::R8, InstructionSuffix::Long) => "%r8d",
+            (Reg::R9, InstructionSuffix::Long) => "%r9d",
             (Reg::R10, InstructionSuffix::Long) => "%r10d",
             (Reg::R11, InstructionSuffix::Long) => "%r11d",
-            _ => todo!(),
+
+            // --- 8-bit (Byte) Registers ---
+            (Reg::AX, InstructionSuffix::Byte) => "%al",
+            (Reg::CX, InstructionSuffix::Byte) => "%cl",
+            (Reg::DX, InstructionSuffix::Byte) => "%dl",
+            (Reg::DI, InstructionSuffix::Byte) => "%dil",
+            (Reg::SI, InstructionSuffix::Byte) => "%sil",
+            (Reg::R8, InstructionSuffix::Byte) => "%r8b",
+            (Reg::R9, InstructionSuffix::Byte) => "%r9b",
+            (Reg::R10, InstructionSuffix::Byte) => "%r10b",
+            (Reg::R11, InstructionSuffix::Byte) => "%r11b",
+            // 注意：BP和SP没有标准的8位版本(bpl/spl需要特殊REX前缀，通常不直接这样用)
+            // 所以我们不在这里包含它们，让它 fall through 到 panic
+
+            // 捕获所有未处理的组合，这样如果未来添加新寄存器或大小，
+            // 编译器会强制我们在这里处理它。
+            // _ => panic!(
+            //     "Unsupported register/size combination: {:?}/{:?}",
+            //     reg, size
+            // ),
         };
         name.to_string()
     }
