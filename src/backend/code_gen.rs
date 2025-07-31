@@ -146,6 +146,7 @@ impl CodeGenerator {
                 // 标签不缩进。
                 writeln!(writer, "{}{}:", LOCAL_LABEL_PREFIX, t)
             }
+            _ => panic!(),
         }
     }
 
@@ -193,6 +194,7 @@ impl CodeGenerator {
             (Reg::DX, InstructionSuffix::Long) => "%edx",
             (Reg::R10, InstructionSuffix::Long) => "%r10d",
             (Reg::R11, InstructionSuffix::Long) => "%r11d",
+            _ => todo!(),
         };
         name.to_string()
     }

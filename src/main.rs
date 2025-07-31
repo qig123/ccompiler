@@ -408,10 +408,10 @@ mod tests {
             lex: false,
             parse: false,
             validate: false,
-            tacky: true,
-            codegen: false,
+            tacky: false,
+            codegen: true,
             save_assembly: false,
-            compile_only: false,
+            compile_only: true,
         };
         run_compiler(cli)
     }

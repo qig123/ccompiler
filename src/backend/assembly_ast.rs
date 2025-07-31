@@ -10,6 +10,7 @@ pub struct Program {
 pub struct Function {
     pub name: String,
     pub instructions: Vec<Instruction>,
+    pub stack_size: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +45,9 @@ pub enum Instruction {
     },
     Label(String),
     AllocateStack(i64),
+    DeallocateStack(i64),
+    Push(Operand),
+    Call(String),
     Ret,
 }
 #[derive(Debug, Clone)]
@@ -77,7 +81,12 @@ pub enum Operand {
 #[derive(Debug, Clone)]
 pub enum Reg {
     AX,
+    CX,
     DX,
+    DI,
+    SI,
+    R8,
+    R9,
     R10,
     R11,
 }

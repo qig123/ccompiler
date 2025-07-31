@@ -43,6 +43,7 @@ impl Instruction {
                 operand1: f(operand1),
                 operand2: f(operand2),
             },
+            Instruction::Push(opd) => Instruction::Push(f(opd)),
             // 其他没有操作数的指令直接克隆
             _ => self.clone(),
         }
@@ -66,7 +67,11 @@ impl AssemblyGenerator {
 
     fn process_function(&mut self, ir_func: &tacky_ir::Function) -> Result<Function, String> {
         // 第 1 步：将 IR 转换为初始汇编指令
-        let initial_instructions = self.generate_initial_instructions(ir_func)?;
+        let mut initial_instructions = Vec::new();
+        let ins_helper = self.generate_function_helper(ir_func)?;
+        initial_instructions.extend(ins_helper);
+        let ins = self.generate_initial_instructions(ir_func)?;
+        initial_instructions.extend(ins);
 
         // 第 2 步：替换伪寄存器并计算栈大小
         let (instructions_with_stack, stack_size) =
@@ -85,7 +90,46 @@ impl AssemblyGenerator {
         Ok(Function {
             name: ir_func.name.clone(),
             instructions: final_instructions,
+            stack_size,
         })
+    }
+    fn generate_function_helper(
+        &mut self,
+        ir_func: &tacky_ir::Function,
+    ) -> Result<Vec<Instruction>, String> {
+        let mut ins = Vec::new();
+
+        for (i, param) in ir_func.params.iter().enumerate() {
+            let destination = Operand::Pseudo(param.clone());
+            let source = if i < 6 {
+                // --- 情况1: 前6个参数，通过寄存器传递 ---
+                // 使用 match 将索引映射到正确的寄存器
+                let register = match i {
+                    0 => Reg::DI,
+                    1 => Reg::SI,
+                    2 => Reg::DX,
+                    3 => Reg::CX,
+                    4 => Reg::R8,
+                    5 => Reg::R9,
+                    // 这个分支理论上不可能到达，因为我们有 i < 6 的检查
+                    _ => unreachable!(),
+                };
+                Operand::Register(register)
+            } else {
+                // --- 情况2: 第7个及以后的参数，通过栈传递 ---
+                // 计算相对于基址指针 %rbp 的偏移量
+                // 第7个参数 (i=6) 的偏移量是 16
+                // 第8个参数 (i=7) 的偏移量是 24 (16 + 8)
+                // ...
+                let offset = 16 + ((i - 6) * 8) as i64;
+                Operand::Stack(offset)
+            };
+            ins.push(Instruction::Mov {
+                src: source,
+                dst: destination,
+            });
+        }
+        Ok(ins)
     }
 
     fn generate_initial_instructions(
@@ -299,8 +343,60 @@ impl AssemblyGenerator {
                 }])
             }
             tacky_ir::Instruction::Label(t) => Ok(vec![Instruction::Label(t.clone())]),
-            _ => {
-                panic!()
+            tacky_ir::Instruction::FunctionCall { name, args, dst } => {
+                let mut ins = Vec::new();
+                //对齐
+                let num_stack_args = if args.len() > 6 { args.len() - 6 } else { 0 };
+                let stack_padding = if num_stack_args % 2 != 0 { 8 } else { 0 };
+                if stack_padding != 0 {
+                    ins.push(Instruction::AllocateStack(stack_padding));
+                }
+                //  发射寄存器参数的指令
+                let split_idx = std::cmp::min(args.len(), 6);
+                let (register_args, stack_args) = args.split_at(split_idx);
+                let arg_registers = [Reg::DI, Reg::SI, Reg::DX, Reg::CX, Reg::R8, Reg::R9];
+                for (i, tacky_arg) in register_args.iter().enumerate() {
+                    let assembly_arg = self.generate_expression(tacky_arg)?;
+                    // 因为 register_args.len() <= 6，所以 i 不会越界
+                    let target_register = arg_registers[i].clone();
+                    ins.push(Instruction::Mov {
+                        src: assembly_arg,
+                        dst: Operand::Register(target_register),
+                    });
+                }
+                // 4. 发射栈参数的指令
+                // 关键：必须反向遍历！
+                for tacky_arg in stack_args.iter().rev() {
+                    let assembly_arg = self.generate_expression(tacky_arg)?;
+                    match assembly_arg {
+                        Operand::Register(_) | Operand::Imm(_) => {
+                            ins.push(Instruction::Push(assembly_arg));
+                        }
+                        _ => {
+                            ins.push(Instruction::Mov {
+                                src: assembly_arg,
+                                dst: Operand::Register(Reg::AX),
+                            });
+                            ins.push(Instruction::Push(Operand::Register(Reg::AX)));
+                        }
+                    }
+                }
+                // // 发出 call 指令
+                ins.push(Instruction::Call(name.clone()));
+                // 调整栈指针
+                let stack_args_len_i64 = stack_args.len() as i64;
+                let bytes_to_remove: i64 = 8 * stack_args_len_i64 + stack_padding;
+                if bytes_to_remove > 0 {
+                    ins.push(Instruction::DeallocateStack(bytes_to_remove));
+                }
+                // 获取返回值
+                let assembly_dst = self.generate_expression(dst)?;
+                ins.push(Instruction::Mov {
+                    src: Operand::Register(Reg::AX),
+                    dst: assembly_dst,
+                });
+
+                Ok(ins)
             }
         }
     }
