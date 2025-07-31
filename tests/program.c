@@ -1,14 +1,25 @@
-int bar(void);
+// a.c
 
+// 函数声明 (在 TACKY 生成时会被忽略)
+int add(int x, int y);
+
+// main 函数，程序的入口
 int main(void) {
-  /* Two local declarations of foo in 'main' and 'bar' conflict -
-   * different numbers of parameters
-   */
-  int foo(int a);
-  return bar() + foo(1);
+    int a = 5;
+    int b = 10;
+    int result;
+
+    // 调用 add 函数，参数是变量 a 和 b
+    result = add(a, b);
+
+    // 再次调用，参数是常量和表达式
+    // 注意：add(result, 2) 中的 'result' 是一个变量
+    result = add(result, 2);
+
+    return result;
 }
 
-int bar(void) {
-  int foo(int a, int b);
-  return foo(1, 2);
+// add 函数的定义
+int add(int x, int y) {
+    return x + y;
 }

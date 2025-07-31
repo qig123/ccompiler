@@ -21,69 +21,89 @@ impl<'a> TackyGenerator<'a> {
     }
 
     pub fn generate_tacky(&mut self, c_ast: &c_ast::Program) -> Result<Program, String> {
-        panic!()
-        // let mut fs = Vec::new();
-        // for item in &c_ast.functions {
-        //     let mut all_instructions = Vec::new();
-        //     let body_ins = self.generate_block(&item.body)?;
-        //     all_instructions.extend(body_ins);
-        //     //在每个函数体的末尾添加一条额外的 TACKY 指令：Return(Constant(0))
-        //     all_instructions.push(Instruction::Return(Value::Constant(0)));
-        //     let f1 = Function {
-        //         name: item.name.clone(),
-        //         body: all_instructions,
-        //     };
-        //     fs.push(f1);
-        // }
-        // Ok(Program { functions: fs })
+        let mut tacky_functions = Vec::new();
+
+        // 遍历所有顶层声明
+        for func_decl in &c_ast.functions {
+            // 关键：只处理有函数体的函数定义
+            if let Some(body_block) = &func_decl.body {
+                // 这是一个函数定义，我们为它生成 TACKY
+
+                // 1. 生成函数体的所有指令
+                let mut instructions = self.generate_block(body_block)?;
+
+                // 2. 确保函数总有返回值
+                // 检查最后一条指令是不是 return，如果不是，就添加 return 0
+                if !matches!(instructions.last(), Some(Instruction::Return(_))) {
+                    instructions.push(Instruction::Return(Value::Constant(0)));
+                }
+
+                // 3. 构建 TACKY Function
+                let tacky_func = Function {
+                    name: func_decl.name.clone(),
+                    params: func_decl.parameters.clone(),
+                    body: instructions,
+                };
+                tacky_functions.push(tacky_func);
+            }
+            // 如果 func_decl.body 是 None，则它是一个函数声明，我们直接忽略它。
+        }
+
+        Ok(Program {
+            functions: tacky_functions,
+        })
     }
+
+    // 职责：将一个 AST 块转换成一个扁平的指令列表
     fn generate_block(&mut self, b: &c_ast::Block) -> Result<Vec<Instruction>, String> {
         let mut all_instructions = Vec::new();
-        for statement in &b.0 {
-            match statement {
-                BlockItem::D(d) => {
-                    let ins = self.generate_tacky_decl(&d)?;
-                    all_instructions.extend(ins);
-                }
-                BlockItem::S(s) => {
-                    let instructions = self.generate_tacky_statement(&s)?;
-                    all_instructions.extend(instructions)
-                }
-            }
+        for item in &b.0 {
+            // 不论是声明还是语句，都调用 generate_block_item
+            let instructions = self.generate_block_item(item)?;
+            all_instructions.extend(instructions);
         }
         Ok(all_instructions)
     }
+    fn generate_block_item(&mut self, item: &c_ast::BlockItem) -> Result<Vec<Instruction>, String> {
+        match item {
+            BlockItem::D(d) => self.generate_tacky_decl(d),
+            BlockItem::S(s) => self.generate_tacky_statement(s),
+        }
+    }
     fn generate_tacky_decl(&mut self, d: &c_ast::Declaration) -> Result<Vec<Instruction>, String> {
-        panic!()
-        // match &d.init {
-        //     None => {
-        //         let v: Vec<Instruction> = Vec::new();
-        //         Ok(v)
-        //     }
-        //     Some(e) => {
-        //         let (mut instructions, result_value) = self.generate_tacky_exp(&e)?;
-        //         let ins_c = Instruction::Copy {
-        //             src: result_value,
-        //             dst: Value::Var(d.name.clone()),
-        //         };
-        //         instructions.push(ins_c);
-        //         Ok(instructions)
-        //     }
-        // }
+        match d {
+            // 嵌套的函数声明(原型)不产生代码，直接忽略
+            c_ast::Declaration::Fun(_) => Ok(Vec::new()),
+            // 变量声明只在有初始化时才产生代码
+            c_ast::Declaration::Variable(v) => self.generate_var_tacky(v),
+        }
+    }
+    fn generate_var_tacky(&mut self, v: &c_ast::VarDecl) -> Result<Vec<Instruction>, String> {
+        if let Some(init_exp) = &v.init {
+            // 这是一个带初始化的声明，如 `int x = 5;`
+            let (mut instructions, result_value) = self.generate_tacky_exp(init_exp)?;
+            instructions.push(Instruction::Copy {
+                src: result_value,
+                dst: Value::Var(v.name.clone()),
+            });
+            Ok(instructions)
+        } else {
+            // 这是一个无初始化的声明，如 `int x;`，它不产生任何 TACKY 指令。
+            Ok(Vec::new())
+        }
     }
     fn generate_forinit(&mut self, init: &c_ast::ForInit) -> Result<Vec<Instruction>, String> {
-        panic!()
-        // match init {
-        //     c_ast::ForInit::InitDecl(d) => Ok(self.generate_tacky_decl(d)?),
-        //     c_ast::ForInit::InitExp(e) => {
-        //         if let Some(item) = e {
-        //             let (ins, _) = self.generate_tacky_exp(item)?; //？
-        //             Ok(ins)
-        //         } else {
-        //             Ok(Vec::new())
-        //         }
-        //     }
-        // }
+        match init {
+            c_ast::ForInit::InitDecl(d) => Ok(self.generate_var_tacky(d)?),
+            c_ast::ForInit::InitExp(e) => {
+                if let Some(item) = e {
+                    let (ins, _) = self.generate_tacky_exp(item)?; //？
+                    Ok(ins)
+                } else {
+                    Ok(Vec::new())
+                }
+            }
+        }
     }
 
     fn generate_tacky_statement(
@@ -394,16 +414,44 @@ impl<'a> TackyGenerator<'a> {
                 }
             },
             c_ast::Expression::Assignment { left, right } => {
-                //  处理左侧表达式，得到目标位置,目前只能是Var
-                let (mut instructions_for_dest, dest_value) = self.generate_tacky_exp(left)?;
-                let (instructions_for_src, src_value) = self.generate_tacky_exp(right)?;
-                instructions_for_dest.extend(instructions_for_src);
-                let copy_ins = Instruction::Copy {
-                    src: src_value,
-                    dst: dest_value.clone(),
+                // 左侧必须是变量，获取其名称
+                let dest_var_name = if let c_ast::Expression::Var(name) = &**left {
+                    name.clone()
+                } else {
+                    // 在此简化模型中，我们只支持赋值给简单变量
+                    return Err("Assignment to non-variable is not supported.".to_string());
                 };
-                instructions_for_dest.push(copy_ins);
-                Ok((instructions_for_dest, dest_value))
+                let dest_value = Value::Var(dest_var_name);
+
+                // [优化点] 检查右侧是否是函数调用
+                if let c_ast::Expression::FuncCall { name, args } = &**right {
+                    // 如果是 `var = func(...)`，生成一步到位的 FunCall 指令
+                    let mut all_instructions = Vec::new();
+                    let mut arg_values = Vec::new();
+                    for arg in args {
+                        let (arg_instrs, arg_val) = self.generate_tacky_exp(arg)?;
+                        all_instructions.extend(arg_instrs);
+                        arg_values.push(arg_val);
+                    }
+
+                    all_instructions.push(Instruction::FunctionCall {
+                        name: name.clone(),
+                        args: arg_values,
+                        dst: dest_value.clone(), //直接将结果存入目标变量
+                    });
+
+                    // 赋值表达式的值就是被赋的值
+                    Ok((all_instructions, dest_value))
+                } else {
+                    // 对于其他赋值，如 a = b + c，使用通用逻辑
+                    let (src_instrs, src_value) = self.generate_tacky_exp(right)?;
+                    let mut instructions = src_instrs;
+                    instructions.push(Instruction::Copy {
+                        src: src_value,
+                        dst: dest_value.clone(),
+                    });
+                    Ok((instructions, dest_value))
+                }
             }
             c_ast::Expression::Var(id) => Ok((Vec::new(), Value::Var(id.clone()))),
             c_ast::Expression::Conditional {
@@ -465,7 +513,27 @@ impl<'a> TackyGenerator<'a> {
 
                 Ok((instructions, result_val))
             }
-            _ => panic!(),
+            c_ast::Expression::FuncCall { name, args } => {
+                // 这个分支现在只处理不作为赋值右值的函数调用
+                // (例如，在表达式语句 `foo();` 中，或者像 `a + foo()` 这样的复杂表达式中)
+                let mut all_instructions = Vec::new();
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    let (arg_instrs, arg_val) = self.generate_tacky_exp(arg)?;
+                    all_instructions.extend(arg_instrs);
+                    arg_values.push(arg_val);
+                }
+
+                // 结果必须存入一个新的临时变量
+                let dst_temp = Value::Var(self.name_gen.new_temp_var());
+                all_instructions.push(Instruction::FunctionCall {
+                    name: name.clone(),
+                    args: arg_values,
+                    dst: dst_temp.clone(),
+                });
+
+                Ok((all_instructions, dst_temp))
+            }
         }
     }
 }

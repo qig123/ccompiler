@@ -10,6 +10,7 @@ pub struct Program {
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
+    pub params: Vec<String>,
     pub body: Vec<Instruction>,
 }
 #[derive(Debug, Clone)]
@@ -40,6 +41,11 @@ pub enum Instruction {
         target: String,
     },
     Label(String),
+    FunctionCall {
+        name: String,
+        args: Vec<Value>,
+        dst: Value,
+    },
 }
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -161,6 +167,11 @@ impl AstNode for Instruction {
             }
             Instruction::Label(t) => {
                 format!("{}:", t)
+            }
+            Instruction::FunctionCall { name, args, dst } => {
+                // 将参数列表格式化成 "arg1, arg2, arg3"
+                let args_str: Vec<String> = args.iter().map(|arg| arg.to_string()).collect();
+                format!("{} = call {}, [{}]", dst, name, args_str.join(", "))
             }
         };
         // Labels shouldn't be indented like other instructions

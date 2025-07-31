@@ -1,7 +1,6 @@
 // src/main.rs
 
 use clap::Parser;
-use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -17,7 +16,6 @@ use crate::frontend::lexer;
 use crate::frontend::loop_labeling::LoopLabeling;
 use crate::frontend::parser;
 use crate::frontend::resolve_ident::IdentifierResolver;
-use crate::frontend::type_checking::SymbolInfo;
 use crate::frontend::type_checking::TypeChecker;
 
 mod backend;
@@ -409,8 +407,8 @@ mod tests {
             source_file: PathBuf::from(r"./tests/program.c"),
             lex: false,
             parse: false,
-            validate: true,
-            tacky: false,
+            validate: false,
+            tacky: true,
             codegen: false,
             save_assembly: false,
             compile_only: false,

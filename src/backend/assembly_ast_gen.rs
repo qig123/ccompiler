@@ -299,6 +299,9 @@ impl AssemblyGenerator {
                 }])
             }
             tacky_ir::Instruction::Label(t) => Ok(vec![Instruction::Label(t.clone())]),
+            _ => {
+                panic!()
+            }
         }
     }
 
