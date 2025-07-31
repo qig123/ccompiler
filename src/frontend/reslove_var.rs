@@ -7,28 +7,32 @@ use crate::{
         Block, BlockItem, Declaration, Expression, ForInit, FunDecl, Program, Statement, VarDecl,
     },
 };
+#[derive(Debug)]
 pub struct Info {
     has_linkage: bool,
     name: String,
 }
-
+#[derive(Debug)]
 pub struct ResloveVar<'a> {
-    variable_map: Vec<HashMap<String, Info>>,
+    env_vec: Vec<HashMap<String, Info>>,
     name_gen: &'a mut UniqueNameGenerator,
 }
 impl<'a> ResloveVar<'a> {
     pub fn new(g: &'a mut UniqueNameGenerator) -> Self {
         ResloveVar {
-            variable_map: Vec::new(),
+            env_vec: Vec::new(),
             name_gen: g,
         }
     }
     pub fn reslove_prgram(&mut self, ast: &Program) -> Result<Program, String> {
         let mut fs: Vec<FunDecl> = Vec::new();
+        //我们必须添加一个顶层环境,感觉这个顶层环境不用pop,你觉得？
+        self.env_vec.push(HashMap::new());
         for f in &ast.functions {
             let new_f = self.reslove_function_decl(f)?;
             fs.push(new_f);
         }
+        self.env_vec.pop();
         Ok(Program { functions: fs })
     }
     fn reslove_function_decl(&mut self, f: &FunDecl) -> Result<FunDecl, String> {
@@ -58,7 +62,7 @@ impl<'a> ResloveVar<'a> {
         }
         //解析函数参数，要新开作用域
         let env_params = HashMap::new();
-        self.variable_map.push(env_params);
+        self.env_vec.push(env_params);
         let mut new_params = Vec::new();
         //这里要怎样解析？
         for p in &f.parameters {
@@ -79,33 +83,38 @@ impl<'a> ResloveVar<'a> {
             new_params.push(new_name);
         }
 
-        if let Some(b) = &f.body {
-            let b = self.reslove_block(b)?;
-            self.variable_map.pop();
-            Ok(FunDecl {
-                name: f.name.clone(),
-                parameters: new_params,
-                body: Some(b),
-            })
+        let new_body = if let Some(b) = &f.body {
+            // We are now in the function's scope (which contains parameters).
+            // We resolve the body's items in this *same* scope,
+            // instead of calling `reslove_block` which would create a new, separate scope.
+            let mut bs: Vec<BlockItem> = Vec::new();
+            for item in &b.0 {
+                let new_item = self.reslove_blockitem(item)?;
+                bs.push(new_item);
+            }
+            Some(Block(bs))
         } else {
-            self.variable_map.pop();
-            Ok(FunDecl {
-                name: f.name.clone(),
-                parameters: new_params,
-                body: None,
-            })
-        }
+            None
+        };
+
+        self.env_vec.pop(); // Pop the combined scope for parameters and function body.
+
+        Ok(FunDecl {
+            name: f.name.clone(),
+            parameters: new_params,
+            body: new_body,
+        })
     }
     fn reslove_block(&mut self, blocks: &Block) -> Result<Block, String> {
         let map = HashMap::new();
-        self.variable_map.push(map);
+        self.env_vec.push(map);
         let mut bs: Vec<BlockItem> = Vec::new();
 
         for b in &blocks.0 {
             let b = self.reslove_blockitem(&b)?;
             bs.push(b);
         }
-        self.variable_map.pop();
+        self.env_vec.pop();
         Ok(Block(bs))
     }
     fn reslove_blockitem(&mut self, b: &BlockItem) -> Result<BlockItem, String> {
@@ -123,37 +132,46 @@ impl<'a> ResloveVar<'a> {
     fn reslove_dec(&mut self, d: &Declaration) -> Result<Declaration, String> {
         match d {
             Declaration::Variable(v) => {
-                if self.check_variable_in_current_env(&v.name) {
-                    return Err("Duplicate variable declaration".to_string());
-                }
-                let new_name = self.name_gen.new_variable_name(v.name.clone());
-                self.insert_new_variable(
-                    v.name.clone(),
-                    Info {
-                        has_linkage: false,
-                        name: new_name.clone(),
-                    },
-                );
-                match &v.init {
-                    None => Ok(Declaration::Variable(VarDecl {
-                        name: new_name,
-                        init: None,
-                    })),
-                    Some(box_e) => {
-                        let new_e = self.reslove_exp(&box_e)?;
-                        Ok(Declaration::Variable(VarDecl {
-                            name: new_name,
-                            init: Some(new_e),
-                        }))
-                    }
-                }
+                let new_v = self.resolve_var_decl(v)?;
+                Ok(Declaration::Variable(new_v))
             }
-            //这是函数内的函数声明,这里能否判断出一定是函数声明，而不存在函数定义？
             Declaration::Fun(f) => {
+                if f.body.is_some() {
+                    // 这是一个嵌套函数定义，非法！
+                    return Err(format!(
+                        "Nested function definitions are not allowed: {}",
+                        f.name
+                    ));
+                }
+                // 这是一个函数内的函数声明，是合法的
                 let new_f = self.reslove_function_decl(f)?;
                 Ok(Declaration::Fun(new_f))
             }
         }
+    }
+    fn resolve_var_decl(&mut self, v: &VarDecl) -> Result<VarDecl, String> {
+        //这里有个严重的问题，比如 "int foo(int a) {int a = 5;return a;}",这样是不允许的,
+        println!("resolve_var_decl {:?}", self.env_vec);
+        //因为这里只检查了当前环境，这里的问题是要向上查找，但是好像又不能查找全局环境,只能找这个函数内的环境？
+        if self.check_variable_in_current_env(&v.name) {
+            return Err(format!("Duplicate variable declaration: {}", v.name));
+        }
+        let new_name = self.name_gen.new_variable_name(v.name.clone());
+        self.insert_new_variable(
+            v.name.clone(),
+            Info {
+                has_linkage: false,
+                name: new_name.clone(),
+            },
+        );
+        let new_init = match &v.init {
+            Some(e) => Some(self.reslove_exp(e)?),
+            None => None,
+        };
+        Ok(VarDecl {
+            name: new_name,
+            init: new_init,
+        })
     }
     fn reslove_statement(&mut self, d: &Statement) -> Result<Statement, String> {
         match d {
@@ -222,7 +240,7 @@ impl<'a> ResloveVar<'a> {
                 ..
             } => {
                 let env_for = HashMap::new();
-                self.variable_map.push(env_for);
+                self.env_vec.push(env_for);
                 let new_init = self.reslove_forinit(init)?;
                 let new_c;
                 if let Some(item_c) = condition {
@@ -237,7 +255,7 @@ impl<'a> ResloveVar<'a> {
                     new_post = None;
                 }
                 let new_body = self.reslove_statement(&body)?;
-                self.variable_map.pop();
+                self.env_vec.pop();
                 Ok(Statement::For {
                     init: new_init,
                     condition: new_c,
@@ -251,31 +269,8 @@ impl<'a> ResloveVar<'a> {
     fn reslove_forinit(&mut self, init: &ForInit) -> Result<ForInit, String> {
         match init {
             ForInit::InitDecl(d) => {
-                //这里应该是调用 reslove_dec的，但是我不会调用，参数好像不兼容
-                if self.check_variable_in_current_env(&d.name) {
-                    return Err("Duplicate variable declaration".to_string());
-                }
-                let new_name = self.name_gen.new_variable_name(d.name.clone());
-                self.insert_new_variable(
-                    d.name.clone(),
-                    Info {
-                        has_linkage: false,
-                        name: new_name.clone(),
-                    },
-                );
-                match &d.init {
-                    None => Ok(ForInit::InitDecl(VarDecl {
-                        name: new_name,
-                        init: None,
-                    })),
-                    Some(box_e) => {
-                        let new_e = self.reslove_exp(&box_e)?;
-                        Ok(ForInit::InitDecl(VarDecl {
-                            name: new_name,
-                            init: Some(new_e),
-                        }))
-                    }
-                }
+                let new_d = self.resolve_var_decl(d)?;
+                Ok(ForInit::InitDecl(new_d))
             }
             ForInit::InitExp(e) => {
                 if let Some(item) = e {
@@ -363,29 +358,22 @@ impl<'a> ResloveVar<'a> {
         }
     }
     fn find_variable_in_env(&self, name: &str) -> (Option<&Info>, bool) {
-        let mut find_count = 0;
-        for m in self.variable_map.iter().rev() {
-            find_count += 1;
-            if m.contains_key(name) {
-                let is_from_current;
-                if find_count > 1 {
-                    is_from_current = false;
-                } else {
-                    is_from_current = true;
-                }
-                return (m.get(name), is_from_current);
+        // 检查当前作用域
+        if let Some(current_scope) = self.env_vec.last() {
+            if let Some(info) = current_scope.get(name) {
+                return (Some(info), true); // 在当前作用域找到
             }
         }
-        let is_from_current;
-        if find_count > 1 {
-            is_from_current = false;
-        } else {
-            is_from_current = true;
+        // 检查外部作用域
+        for scope in self.env_vec.iter().rev().skip(1) {
+            if let Some(info) = scope.get(name) {
+                return (Some(info), false); // 在外部作用域找到
+            }
         }
-        return (None, is_from_current);
+        (None, false) // 任何地方都没找到
     }
     fn check_variable_in_current_env(&self, name: &str) -> bool {
-        let m = self.variable_map.last();
+        let m = self.env_vec.last();
         if let Some(item) = m {
             return item.contains_key(name);
         }
@@ -393,9 +381,173 @@ impl<'a> ResloveVar<'a> {
     }
 
     fn insert_new_variable(&mut self, old: String, new: Info) {
-        let m = self.variable_map.last_mut();
+        let m = self.env_vec.last_mut();
         if let Some(item) = m {
             item.insert(old, new);
         }
+    }
+}
+
+//  src/frontend/reslove_var.rs
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::UniqueNameGenerator;
+    use crate::frontend::c_ast::Program;
+    use crate::frontend::{lexer::Lexer, parser::Parser};
+
+    // 这是一个辅助函数，它将C代码字符串走完 词法分析 -> 语法分析 -> 变量解析 的完整流程
+    // 这比只测试 ResloveVar 更接近集成测试，能发现更多问题。
+    fn run_resolver_on_string(c_code: &str) -> Result<Program, String> {
+        // 1. 词法分析
+        let lexer = Lexer::new();
+        let tokens = lexer.lex(c_code)?;
+
+        // 2. 语法分析
+        let parser = Parser::new(tokens);
+        let ast = parser.parse()?;
+
+        // 3. 变量解析 (这是我们真正要测试的部分)
+        let mut name_gen = UniqueNameGenerator::new();
+        let mut resolver = ResloveVar::new(&mut name_gen);
+        resolver.reslove_prgram(&ast)
+    }
+
+    // --- 成功案例 (Happy Paths) ---
+
+    #[test]
+    fn test_simple_variable() {
+        let result = run_resolver_on_string("int main() { int a = 1; return a; }");
+        assert!(result.is_ok(), "解析应成功，但失败了: {:?}", result);
+
+        // 我们可以更进一步，检查AST是否真的被修改了
+        let resolved_ast = result.unwrap();
+        let main_func = &resolved_ast.functions[0];
+        let body = main_func.body.as_ref().unwrap();
+
+        // 检查变量声明
+        if let BlockItem::D(Declaration::Variable(var_decl)) = &body.0[0] {
+            assert_ne!(var_decl.name, "a", "变量 'a' 应该被重命名");
+        } else {
+            panic!("期望第一个块内元素是变量声明");
+        }
+
+        // 检查 return 语句
+        if let BlockItem::S(Statement::Return(Expression::Var(var_name))) = &body.0[1] {
+            assert_ne!(var_name, "a", "return 语句中的 'a' 应该被重命名");
+        } else {
+            panic!("期望第二个块内元素是 return 语句");
+        }
+    }
+
+    #[test]
+    fn test_scope_shadowing() {
+        let result = run_resolver_on_string("int main() { int a = 1; { int a = 2; } return a; }");
+        assert!(result.is_ok(), "解析应成功，但失败了: {:?}", result);
+
+        // 断言 return a 返回的是外部的 a
+        let resolved_ast = result.unwrap();
+        let main_func = &resolved_ast.functions[0];
+        let main_body = main_func.body.as_ref().unwrap();
+
+        let outer_a_new_name =
+            if let BlockItem::D(Declaration::Variable(var_decl)) = &main_body.0[0] {
+                var_decl.name.clone()
+            } else {
+                panic!("Expected outer variable declaration");
+            };
+
+        let returned_var_name =
+            if let BlockItem::S(Statement::Return(Expression::Var(var_name))) = &main_body.0[2] {
+                var_name.clone()
+            } else {
+                panic!("Expected return statement");
+            };
+
+        assert_eq!(
+            outer_a_new_name, returned_var_name,
+            "Return 语句应该引用外部作用域的 'a'"
+        );
+    }
+
+    #[test]
+    fn test_legal_function_redeclaration() {
+        let code = "int foo(); int foo(); int main() { return foo(); }";
+        let result = run_resolver_on_string(code);
+        assert!(
+            result.is_ok(),
+            "合法的函数重声明不应报错，但出错了: {:?}",
+            result
+        );
+    }
+
+    // --- 失败案例 (Error Cases) ---
+
+    #[test]
+    fn test_duplicate_variable_in_same_scope() {
+        let result = run_resolver_on_string("int main() { int a; int a; }");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Duplicate variable declaration")
+        );
+    }
+
+    #[test]
+    fn test_function_shadows_variable_in_same_scope() {
+        let result = run_resolver_on_string("int main() { int foo; int foo(); }");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "重复声明! foo");
+    }
+
+    #[test]
+    fn test_variable_shadows_function_in_same_scope() {
+        let result = run_resolver_on_string("int main() { int foo(); int foo; }");
+        assert!(result.is_err());
+        // 这里的错误信息取决于你的实现，"Duplicate variable declaration" 是合理的
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Duplicate variable declaration")
+        );
+    }
+
+    #[test]
+    fn test_duplicate_parameter_name() {
+        let result = run_resolver_on_string("int add(int x, int x) { return 1; }");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Duplicate variable declaration in add params")
+        );
+    }
+
+    #[test]
+    fn test_use_undeclared_variable() {
+        let result = run_resolver_on_string("int main() { return x; }");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Undeclared variable!");
+    }
+
+    #[test]
+    fn test_call_undeclared_function() {
+        let result = run_resolver_on_string("int main() { return foo(); }");
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "未声明函数!");
+    }
+
+    #[test]
+    fn test_nested_function_definition_is_illegal() {
+        // 前提：你已经在 reslove_dec 中添加了对嵌套函数定义的检查
+        let result = run_resolver_on_string("int main() { int bar() { return 1; } }");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .contains("Nested function definitions are not allowed")
+        );
     }
 }
