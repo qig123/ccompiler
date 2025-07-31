@@ -15,7 +15,7 @@ use crate::frontend::c_ast::Program;
 use crate::frontend::lexer;
 use crate::frontend::loop_labeling::LoopLabeling;
 use crate::frontend::parser;
-use crate::frontend::reslove_var::ResloveVar;
+use crate::frontend::resolve_ident::IdentifierResolver;
 
 mod backend;
 mod common;
@@ -190,7 +190,7 @@ fn run_compiler(cli: Cli) -> Result<(), String> {
     }
 
     // (3) 语义分析
-    let resolved_ast = resolve_vars(&ast, &mut name_gen)?;
+    let resolved_ast = resolve_idents(&ast, &mut name_gen)?;
     let labeled_ast = label_loops(&resolved_ast, &mut name_gen)?;
     if cli.validate {
         println!("\n--validate: 语义分析完成, 程序停止。");
@@ -280,11 +280,11 @@ fn parse(tokens: Vec<lexer::Token>) -> Result<Program, String> {
     program.pretty_print(&mut printer);
     Ok(program)
 }
-fn resolve_vars(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, String> {
-    println!("(3.1) 语义分析：变量解析...");
-    let mut v = ResloveVar::new(g);
-    let ast = v.reslove_prgram(c_ast)?;
-    println!("   ✅ 变量解析完成, 打印解析后的 AST:");
+fn resolve_idents(c_ast: &Program, g: &mut UniqueNameGenerator) -> Result<Program, String> {
+    println!("(3.1) 语义分析：标识符解析...");
+    let mut resolver = IdentifierResolver::new(g);
+    let ast = resolver.resolve_program(c_ast)?;
+    println!("   ✅ 标识符解析完成, 打印解析后的 AST:");
     let mut stdout = io::stdout();
     let mut printer = PrettyPrinter::new(&mut stdout);
     ast.pretty_print(&mut printer);
