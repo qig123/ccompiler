@@ -40,9 +40,9 @@ impl TypeChecker {
         // 虽然C语言不允许在顶层声明变量，但这是个好习惯
         self.push_scope();
 
-        for decl in &ast.functions {
+        for decl in &ast.declarations {
             // 现在Program还没有全局变量
-            self.typecheck_function_decl(decl)?;
+            self.typecheck_declaration(decl)?;
         }
 
         self.pop_scope();

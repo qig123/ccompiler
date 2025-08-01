@@ -5,7 +5,7 @@ use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct Program {
-    pub functions: Vec<FunDecl>,
+    pub declarations: Vec<Declaration>,
 }
 
 #[derive(Debug, Clone)]
@@ -25,12 +25,19 @@ pub struct FunDecl {
     pub name: String,
     pub parameters: Vec<String>,
     pub body: Option<Block>,
+    pub storage_class: Option<StorageClass>,
 }
 
 #[derive(Debug, Clone)]
 pub struct VarDecl {
     pub name: String,
     pub init: Option<Expression>,
+    pub storage_class: Option<StorageClass>,
+}
+#[derive(Debug, Clone)]
+pub enum StorageClass {
+    Static,
+    Extern,
 }
 
 #[derive(Debug, Clone)]
@@ -155,7 +162,7 @@ impl AstNode for Program {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
         printer.writeln("Program").unwrap();
         printer.indent();
-        for function in &self.functions {
+        for function in &self.declarations {
             function.pretty_print(printer);
         }
         printer.unindent();
@@ -169,12 +176,17 @@ impl AstNode for FunDecl {
         } else {
             self.parameters.join(", ")
         };
+        let storage_str = match &self.storage_class {
+            Some(StorageClass::Static) => ", storage: static",
+            Some(StorageClass::Extern) => ", storage: extern",
+            None => "", // 如果没有，就不打印
+        };
 
         if let Some(body) = &self.body {
             printer
                 .writeln(&format!(
-                    "FunctionDefinition(name: \"{}\", params: [{}])",
-                    self.name, params_str
+                    "FunctionDefinition(name: \"{}\", params: [{}]{})",
+                    self.name, params_str, storage_str
                 ))
                 .unwrap();
             printer.indent();
@@ -183,8 +195,8 @@ impl AstNode for FunDecl {
         } else {
             printer
                 .writeln(&format!(
-                    "FunctionDeclaration(name: \"{}\", params: [{}])",
-                    self.name, params_str
+                    "FunctionDeclaration(name: \"{}\", params: [{}]{})",
+                    self.name, params_str, storage_str
                 ))
                 .unwrap();
         }
@@ -193,19 +205,30 @@ impl AstNode for FunDecl {
 
 impl AstNode for VarDecl {
     fn pretty_print(&self, printer: &mut PrettyPrinter) {
+        let storage_str = match &self.storage_class {
+            Some(StorageClass::Static) => ", storage: static",
+            Some(StorageClass::Extern) => ", storage: extern",
+            None => "",
+        };
+
         if let Some(init_expr) = &self.init {
+            // 2. 修改带初始值的打印
             printer
                 .writeln(&format!(
-                    "VarDeclaration(name: \"{}\", with init)",
-                    self.name
+                    "VarDeclaration(name: \"{}\"{}, with init)",
+                    self.name, storage_str
                 ))
                 .unwrap();
             printer.indent();
             init_expr.pretty_print(printer);
             printer.unindent();
         } else {
+            // 3. 修改不带初始值的打印
             printer
-                .writeln(&format!("VarDeclaration(name: \"{}\")", self.name))
+                .writeln(&format!(
+                    "VarDeclaration(name: \"{}\"{})",
+                    self.name, storage_str
+                ))
                 .unwrap();
         }
     }

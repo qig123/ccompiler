@@ -69,96 +69,98 @@ impl<'a> IdentifierResolver<'a> {
     /// 解析整个程序（即AST的根节点）。
     pub fn resolve_program(&mut self, ast: &Program) -> Result<Program, String> {
         // 创建并推入全局作用域
-        self.env_stack.push(HashMap::new());
+        // self.env_stack.push(HashMap::new());
 
-        let mut resolved_functions: Vec<FunDecl> = Vec::new();
-        for f in &ast.functions {
-            let resolved_f = self.resolve_function_decl(f)?;
-            resolved_functions.push(resolved_f);
-        }
+        // let mut resolved_functions: Vec<FunDecl> = Vec::new();
+        // for f in &ast.declarations {
+        //     let resolved_f = self.resolve_declaration(f)?;
+        //     resolved_functions.push(resolved_f);
+        // }
 
-        // 完成解析后，弹出全局作用域
-        self.env_stack.pop();
-        Ok(Program {
-            functions: resolved_functions,
-        })
+        // // 完成解析后，弹出全局作用域
+        // self.env_stack.pop();
+        // Ok(Program {
+        //     declarations: resolved_functions,
+        // })
+        panic!()
     }
 
     /// 解析函数声明或定义。
     fn resolve_function_decl(&mut self, f: &FunDecl) -> Result<FunDecl, String> {
-        // 检查当前作用域（通常是全局作用域）中是否已存在同名标识符。
-        let existing_entry = self.find_identifier_in_current_scope(&f.name);
+        // // 检查当前作用域（通常是全局作用域）中是否已存在同名标识符。
+        // let existing_entry = self.find_identifier_in_current_scope(&f.name);
 
-        if let Some(info) = existing_entry {
-            // 如果存在一个同名的非链接标识符（即局部变量），则为重复声明错误。
-            if !info.has_linkage {
-                return Err(format!(
-                    "Semantic Error: Redeclaration of '{}' as a different kind of symbol.",
-                    f.name
-                ));
-            }
-            // 如果已经存在一个同名的函数声明，这是合法的（例如函数原型和函数定义）。
-            // 我们不需要做任何特殊处理，因为它们都指向同一个实体。
-        } else {
-            // 如果是新的函数声明，则将其添加到当前作用域。
-            self.insert_identifier(
-                f.name.clone(),
-                IdentifierInfo {
-                    has_linkage: true,
-                    mangled_name: f.name.clone(), // 函数名不需要修饰
-                },
-            );
-        }
+        // if let Some(info) = existing_entry {
+        //     // 如果存在一个同名的非链接标识符（即局部变量），则为重复声明错误。
+        //     if !info.has_linkage {
+        //         return Err(format!(
+        //             "Semantic Error: Redeclaration of '{}' as a different kind of symbol.",
+        //             f.name
+        //         ));
+        //     }
+        //     // 如果已经存在一个同名的函数声明，这是合法的（例如函数原型和函数定义）。
+        //     // 我们不需要做任何特殊处理，因为它们都指向同一个实体。
+        // } else {
+        //     // 如果是新的函数声明，则将其添加到当前作用域。
+        //     self.insert_identifier(
+        //         f.name.clone(),
+        //         IdentifierInfo {
+        //             has_linkage: true,
+        //             mangled_name: f.name.clone(), // 函数名不需要修饰
+        //         },
+        //     );
+        // }
 
-        // --- 创建函数作用域 ---
-        // 此作用域将包含函数参数和函数体的所有局部变量。
-        self.env_stack.push(HashMap::new());
+        // // --- 创建函数作用域 ---
+        // // 此作用域将包含函数参数和函数体的所有局部变量。
+        // self.env_stack.push(HashMap::new());
 
-        // 解析函数参数
-        let mut resolved_params = Vec::new();
-        for p_name in &f.parameters {
-            // 检查参数名是否在当前（函数）作用域内重复。
-            if self.is_identifier_in_current_scope(p_name) {
-                return Err(format!(
-                    "Semantic Error: Duplicate parameter name '{}' in function '{}'.",
-                    p_name, f.name
-                ));
-            }
-            // 为参数生成唯一的内部名称并存入符号表。
-            let mangled_name = self.name_generator.new_variable_name(p_name.clone());
-            self.insert_identifier(
-                p_name.clone(),
-                IdentifierInfo {
-                    has_linkage: false,
-                    mangled_name: mangled_name.clone(),
-                },
-            );
-            resolved_params.push(mangled_name);
-        }
+        // // 解析函数参数
+        // let mut resolved_params = Vec::new();
+        // for p_name in &f.parameters {
+        //     // 检查参数名是否在当前（函数）作用域内重复。
+        //     if self.is_identifier_in_current_scope(p_name) {
+        //         return Err(format!(
+        //             "Semantic Error: Duplicate parameter name '{}' in function '{}'.",
+        //             p_name, f.name
+        //         ));
+        //     }
+        //     // 为参数生成唯一的内部名称并存入符号表。
+        //     let mangled_name = self.name_generator.new_variable_name(p_name.clone());
+        //     self.insert_identifier(
+        //         p_name.clone(),
+        //         IdentifierInfo {
+        //             has_linkage: false,
+        //             mangled_name: mangled_name.clone(),
+        //         },
+        //     );
+        //     resolved_params.push(mangled_name);
+        // }
 
-        // 解析函数体
-        let resolved_body = if let Some(body_block) = &f.body {
-            // 直接在包含参数的同一作用域内解析函数体中的条目。
-            // 这样可以正确检测出函数体内的变量声明与参数名之间的冲突。
-            let mut resolved_items: Vec<BlockItem> = Vec::new();
-            for item in &body_block.0 {
-                let resolved_item = self.resolve_block_item(item)?;
-                resolved_items.push(resolved_item);
-            }
-            Some(Block(resolved_items))
-        } else {
-            // 函数只有声明，没有函数体。
-            None
-        };
+        // // 解析函数体
+        // let resolved_body = if let Some(body_block) = &f.body {
+        //     // 直接在包含参数的同一作用域内解析函数体中的条目。
+        //     // 这样可以正确检测出函数体内的变量声明与参数名之间的冲突。
+        //     let mut resolved_items: Vec<BlockItem> = Vec::new();
+        //     for item in &body_block.0 {
+        //         let resolved_item = self.resolve_block_item(item)?;
+        //         resolved_items.push(resolved_item);
+        //     }
+        //     Some(Block(resolved_items))
+        // } else {
+        //     // 函数只有声明，没有函数体。
+        //     None
+        // };
 
-        // --- 退出函数作用域 ---
-        self.env_stack.pop();
+        // // --- 退出函数作用域 ---
+        // self.env_stack.pop();
 
-        Ok(FunDecl {
-            name: f.name.clone(),
-            parameters: resolved_params,
-            body: resolved_body,
-        })
+        // Ok(FunDecl {
+        //     name: f.name.clone(),
+        //     parameters: resolved_params,
+        //     body: resolved_body,
+        // })
+        panic!()
     }
 
     /// 解析代码块（Block）。
@@ -214,35 +216,7 @@ impl<'a> IdentifierResolver<'a> {
 
     /// 解析变量声明。
     fn resolve_variable_declaration(&mut self, v: &VarDecl) -> Result<VarDecl, String> {
-        // 检查变量是否在当前作用域内重复定义。
-        // 这是捕捉 `int foo(int a) { int a; }` 这类错误的关键。
-        if self.is_identifier_in_current_scope(&v.name) {
-            return Err(format!(
-                "Semantic Error: Duplicate declaration of variable '{}' in the same scope.",
-                v.name
-            ));
-        }
-
-        // 为变量生成唯一名称并添加到当前作用域。
-        let mangled_name = self.name_generator.new_variable_name(v.name.clone());
-        self.insert_identifier(
-            v.name.clone(),
-            IdentifierInfo {
-                has_linkage: false,
-                mangled_name: mangled_name.clone(),
-            },
-        );
-
-        // 如果有初始化表达式，则递归解析它。
-        let new_init = match &v.init {
-            Some(e) => Some(self.resolve_expression(e)?),
-            None => None,
-        };
-
-        Ok(VarDecl {
-            name: mangled_name,
-            init: new_init,
-        })
+        panic!()
     }
 
     /// 解析语句。
@@ -504,65 +478,67 @@ mod tests {
 
     #[test]
     fn test_simple_variable_resolution() {
-        let result = run_resolver_on_string("int main() { int a = 1; return a; }");
-        assert!(
-            result.is_ok(),
-            "Should resolve successfully, but failed: {:?}",
-            result
-        );
+        // let result = run_resolver_on_string("int main() { int a = 1; return a; }");
+        // assert!(
+        //     result.is_ok(),
+        //     "Should resolve successfully, but failed: {:?}",
+        //     result
+        // );
 
-        let resolved_ast = result.unwrap();
-        let main_func = &resolved_ast.functions[0];
-        let body = main_func.body.as_ref().unwrap();
+        // let resolved_ast = result.unwrap();
+        // let main_func = &resolved_ast.declarations[0];
+        // let body = main_func.body.as_ref().unwrap();
 
-        let mangled_name = if let BlockItem::D(Declaration::Variable(var_decl)) = &body.0[0] {
-            assert_ne!(var_decl.name, "a", "Variable 'a' should have been mangled.");
-            var_decl.name.clone()
-        } else {
-            panic!("Expected a variable declaration as the first block item.");
-        };
+        // let mangled_name = if let BlockItem::D(Declaration::Variable(var_decl)) = &body.0[0] {
+        //     assert_ne!(var_decl.name, "a", "Variable 'a' should have been mangled.");
+        //     var_decl.name.clone()
+        // } else {
+        //     panic!("Expected a variable declaration as the first block item.");
+        // };
 
-        if let BlockItem::S(Statement::Return(Expression::Var(var_name))) = &body.0[1] {
-            assert_eq!(
-                *var_name, mangled_name,
-                "The returned variable should use the mangled name."
-            );
-        } else {
-            panic!("Expected a return statement as the second block item.");
-        }
+        // if let BlockItem::S(Statement::Return(Expression::Var(var_name))) = &body.0[1] {
+        //     assert_eq!(
+        //         *var_name, mangled_name,
+        //         "The returned variable should use the mangled name."
+        //     );
+        // } else {
+        //     panic!("Expected a return statement as the second block item.");
+        // }
+        panic!()
     }
 
     #[test]
     fn test_scope_shadowing() {
-        let result = run_resolver_on_string("int main() { int a = 1; { int a = 2; } return a; }");
-        assert!(
-            result.is_ok(),
-            "Shadowing should be allowed, but failed: {:?}",
-            result
-        );
+        // let result = run_resolver_on_string("int main() { int a = 1; { int a = 2; } return a; }");
+        // assert!(
+        //     result.is_ok(),
+        //     "Shadowing should be allowed, but failed: {:?}",
+        //     result
+        // );
 
-        let resolved_ast = result.unwrap();
-        let main_func = &resolved_ast.functions[0];
-        let main_body = main_func.body.as_ref().unwrap();
+        // let resolved_ast = result.unwrap();
+        // let main_func = &resolved_ast.declarations[0];
+        // let main_body = main_func.body.as_ref().unwrap();
 
-        let outer_a_mangled_name =
-            if let BlockItem::D(Declaration::Variable(var_decl)) = &main_body.0[0] {
-                var_decl.name.clone()
-            } else {
-                panic!("Expected outer variable declaration.");
-            };
+        // let outer_a_mangled_name =
+        //     if let BlockItem::D(Declaration::Variable(var_decl)) = &main_body.0[0] {
+        //         var_decl.name.clone()
+        //     } else {
+        //         panic!("Expected outer variable declaration.");
+        //     };
 
-        let returned_var_name =
-            if let BlockItem::S(Statement::Return(Expression::Var(var_name))) = &main_body.0[2] {
-                var_name.clone()
-            } else {
-                panic!("Expected return statement.");
-            };
+        // let returned_var_name =
+        //     if let BlockItem::S(Statement::Return(Expression::Var(var_name))) = &main_body.0[2] {
+        //         var_name.clone()
+        //     } else {
+        //         panic!("Expected return statement.");
+        //     };
 
-        assert_eq!(
-            outer_a_mangled_name, returned_var_name,
-            "Return statement should refer to the outer 'a'."
-        );
+        // assert_eq!(
+        //     outer_a_mangled_name, returned_var_name,
+        //     "Return statement should refer to the outer 'a'."
+        // );
+        panic!()
     }
 
     #[test]

@@ -51,29 +51,31 @@ impl<'a> LoopLabeling<'a> {
 
     /// 解析器的主入口点，负责遍历并标记整个程序中的所有循环。
     pub fn label_loops_in_program(&mut self, ast: &Program) -> Result<Program, String> {
-        let mut labeled_functions = Vec::new();
-        for f in &ast.functions {
-            let new_f = self.label_loops_in_function_decl(f)?;
-            labeled_functions.push(new_f);
-        }
-        Ok(Program {
-            functions: labeled_functions,
-        })
+        // let mut labeled_functions = Vec::new();
+        // for f in &ast.declarations {
+        //     let new_f = self.label_loops_in_function_decl(f)?;
+        //     labeled_functions.push(new_f);
+        // }
+        // Ok(Program {
+        //     declarations: labeled_functions,
+        // })
+        panic!()
     }
 
     /// 遍历函数声明，主要处理其函数体。
     fn label_loops_in_function_decl(&mut self, f: &FunDecl) -> Result<FunDecl, String> {
-        let new_body = if let Some(b) = &f.body {
-            Some(self.label_loops_in_block(b)?)
-        } else {
-            None
-        };
+        // let new_body = if let Some(b) = &f.body {
+        //     Some(self.label_loops_in_block(b)?)
+        // } else {
+        //     None
+        // };
 
-        Ok(FunDecl {
-            name: f.name.clone(),
-            parameters: f.parameters.clone(),
-            body: new_body,
-        })
+        // Ok(FunDecl {
+        //     name: f.name.clone(),
+        //     parameters: f.parameters.clone(),
+        //     body: new_body,
+        // })
+        panic!()
     }
 
     /// 遍历代码块中的每一个条目。

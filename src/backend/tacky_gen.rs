@@ -21,37 +21,38 @@ impl<'a> TackyGenerator<'a> {
     }
 
     pub fn generate_tacky(&mut self, c_ast: &c_ast::Program) -> Result<Program, String> {
-        let mut tacky_functions = Vec::new();
+        // let mut tacky_functions = Vec::new();
 
-        // 遍历所有顶层声明
-        for func_decl in &c_ast.functions {
-            // 关键：只处理有函数体的函数定义
-            if let Some(body_block) = &func_decl.body {
-                // 这是一个函数定义，我们为它生成 TACKY
+        // // 遍历所有顶层声明
+        // for func_decl in &c_ast.declarations {
+        //     // 关键：只处理有函数体的函数定义
+        //     if let Some(body_block) = &func_decl.body {
+        //         // 这是一个函数定义，我们为它生成 TACKY
 
-                // 1. 生成函数体的所有指令
-                let mut instructions = self.generate_block(body_block)?;
+        //         // 1. 生成函数体的所有指令
+        //         let mut instructions = self.generate_block(body_block)?;
 
-                // 2. 确保函数总有返回值
-                // 检查最后一条指令是不是 return，如果不是，就添加 return 0
-                if !matches!(instructions.last(), Some(Instruction::Return(_))) {
-                    instructions.push(Instruction::Return(Value::Constant(0)));
-                }
+        //         // 2. 确保函数总有返回值
+        //         // 检查最后一条指令是不是 return，如果不是，就添加 return 0
+        //         if !matches!(instructions.last(), Some(Instruction::Return(_))) {
+        //             instructions.push(Instruction::Return(Value::Constant(0)));
+        //         }
 
-                // 3. 构建 TACKY Function
-                let tacky_func = Function {
-                    name: func_decl.name.clone(),
-                    params: func_decl.parameters.clone(),
-                    body: instructions,
-                };
-                tacky_functions.push(tacky_func);
-            }
-            // 如果 func_decl.body 是 None，则它是一个函数声明，我们直接忽略它。
-        }
+        //         // 3. 构建 TACKY Function
+        //         let tacky_func = Function {
+        //             name: func_decl.name.clone(),
+        //             params: func_decl.parameters.clone(),
+        //             body: instructions,
+        //         };
+        //         tacky_functions.push(tacky_func);
+        //     }
+        //     // 如果 func_decl.body 是 None，则它是一个函数声明，我们直接忽略它。
+        // }
 
-        Ok(Program {
-            functions: tacky_functions,
-        })
+        // Ok(Program {
+        //     functions: tacky_functions,
+        // })
+        panic!()
     }
 
     // 职责：将一个 AST 块转换成一个扁平的指令列表

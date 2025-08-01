@@ -39,7 +39,7 @@ use std::vec::IntoIter;
 
 use crate::frontend::c_ast::{
     BinaryOp, Block, BlockItem, Declaration, Expression, ForInit, FunDecl, Program, Statement,
-    UnaryOp, VarDecl,
+    StorageClass, UnaryOp, VarDecl,
 };
 use crate::frontend::lexer::{Token, TokenType};
 
@@ -72,21 +72,14 @@ impl Parser {
     ///
     /// 在我们的C语言子集中，顶层可以包含函数和全局变量的声明。
     fn parse_program(&mut self) -> Result<Program, String> {
-        let mut functions = Vec::new();
-        // 持续解析，直到遇到文件结束符 (Eof)。
+        let mut decls = Vec::new();
         while !self.match_token(TokenType::Eof) {
-            // 顶层声明必须以 'int' 或 'void' 开头。
             let decl = self.parse_declaration()?;
-            // 目前的简化实现只将函数定义添加到程序中。
-            // 一个更完整的编译器需要处理全局变量和函数原型。
-            if let Declaration::Fun(func_decl) = decl {
-                functions.push(func_decl);
-            } else {
-                // 如果需要支持全局变量，可以在这里处理 `Declaration::Variable`
-                return Err("Syntax Error: Global variable declarations are not yet supported.".to_string());
-            }
+            decls.push(decl);
         }
-        Ok(Program { functions })
+        Ok(Program {
+            declarations: decls,
+        })
     }
 
     // --- 声明解析 ---
@@ -95,8 +88,19 @@ impl Parser {
     ///
     /// 文法规则: `<declaration> ::= "int" <identifier> (";" | "=" ... | "(" ...)`
     fn parse_declaration(&mut self) -> Result<Declaration, String> {
-        // 所有声明都以类型说明符开始，这里我们只支持 "int"。
-        self.consume(TokenType::Int)?;
+        //收集specifier tokens
+        let mut spec_tokens = Vec::new();
+        while let Some(t) = self.tokens.peek().cloned() {
+            if t.type_ == TokenType::Identifier {
+                break;
+            } else {
+                self.tokens.next();
+                spec_tokens.push(t.clone());
+            }
+        }
+
+        let storage_class = self.parse_type_and_storage_class(spec_tokens)?;
+
         let name_token = self.consume(TokenType::Identifier)?;
         let name = name_token.value.ok_or_else(|| {
             "Syntax Error: Expected a name for the identifier, but it was missing.".to_string()
@@ -105,54 +109,82 @@ impl Parser {
         // 通过查看下一个 Token 来判断是函数还是变量。
         if self.check(TokenType::LeftParen) {
             // 如果是 '(', 那么这是一个函数声明或定义。
-            let func_decl = self.parse_function_remainder(name)?;
-            Ok(Declaration::Fun(func_decl))
+            self.consume(TokenType::LeftParen)?;
+            let params = self.parse_func_params()?;
+            self.consume(TokenType::RightParen)?;
+            if self.match_token(TokenType::Semicolon) {
+                // 如果是分号，这是一个函数原型声明 (e.g., `int add(int a, int b);`)
+                Ok(Declaration::Fun(FunDecl {
+                    name,
+                    parameters: params,
+                    body: None,
+                    storage_class,
+                }))
+            } else {
+                // 否则，必须是一个函数体代码块。
+                let body = self.parse_block()?;
+                Ok(Declaration::Fun(FunDecl {
+                    name,
+                    parameters: params,
+                    body: Some(body),
+                    storage_class,
+                }))
+            }
         } else {
             // 否则，它是一个变量声明。
-            let var_decl = self.parse_var_remainder(name)?;
-            Ok(Declaration::Variable(var_decl))
+            let init = if self.match_token(TokenType::Assignment) {
+                Some(self.parse_exp(0)?)
+            } else {
+                None
+            };
+            self.consume(TokenType::Semicolon)?;
+
+            Ok(Declaration::Variable(VarDecl {
+                name: name,
+                init: init,
+                storage_class,
+            }))
         }
     }
-
-    /// 解析变量声明的剩余部分。
-    ///
-    /// 调用此函数时，`"int" <identifier>` 已经被消耗。
-    /// 文法规则: `<var-decl-remainder> ::= ["=" <exp>] ";"`
-    fn parse_var_remainder(&mut self, name: String) -> Result<VarDecl, String> {
-        let init = if self.match_token(TokenType::Assignment) {
-            Some(self.parse_exp(0)?)
-        } else {
-            None
-        };
-        self.consume(TokenType::Semicolon)?;
-        Ok(VarDecl { name, init })
-    }
-
-    /// 解析函数声明或定义的剩余部分。
-    ///
-    /// 调用此函数时，`"int" <identifier>` 已经被消耗。
-    /// 文法规则: `<func-decl-remainder> ::= "(" <param-list> ")" (";" | <block>)`
-    fn parse_function_remainder(&mut self, name: String) -> Result<FunDecl, String> {
-        self.consume(TokenType::LeftParen)?;
-        let params = self.parse_func_params()?;
-        self.consume(TokenType::RightParen)?;
-
-        if self.match_token(TokenType::Semicolon) {
-            // 如果是分号，这是一个函数原型声明 (e.g., `int add(int a, int b);`)
-            Ok(FunDecl {
-                name,
-                parameters: params,
-                body: None,
-            })
-        } else {
-            // 否则，必须是一个函数体代码块。
-            let body = self.parse_block()?;
-            Ok(FunDecl {
-                name,
-                parameters: params,
-                body: Some(body),
-            })
+    //
+    fn parse_type_and_storage_class(
+        &mut self,
+        toknes: Vec<Token>,
+    ) -> Result<Option<StorageClass>, String> {
+        let mut types = Vec::new();
+        let mut storage_classes = Vec::new();
+        for t in toknes {
+            if t.type_ == TokenType::Int {
+                types.push(TokenType::Int);
+            } else {
+                storage_classes.push(t.clone());
+            }
         }
+        if types.len() != 1 {
+            return Err("Syntax Error: Invalid type specifier".to_string());
+        }
+        if storage_classes.len() > 1 {
+            return Err("Syntax Error: Invalid storage class".to_string());
+        }
+        let ss = self.parse_storage_class(storage_classes)?;
+
+        Ok(ss)
+    }
+    fn parse_storage_class(&mut self, tokens: Vec<Token>) -> Result<Option<StorageClass>, String> {
+        for t in tokens {
+            match t.type_ {
+                TokenType::Static => {
+                    return Ok(Some(StorageClass::Static));
+                }
+                TokenType::Extern => {
+                    return Ok(Some(StorageClass::Extern));
+                }
+                _ => {
+                    unreachable!()
+                }
+            }
+        }
+        Ok(None)
     }
 
     /// 解析函数参数列表。
@@ -200,12 +232,20 @@ impl Parser {
     ///
     /// 文法规则: `<block-item> ::= <declaration> | <statement>`
     fn parse_block_item(&mut self) -> Result<BlockItem, String> {
-        // 通过检查下一个 Token 是否为 "int" 来区分声明和语句。
-        // 这是一个简化的假设，一个完整的C编译器需要更复杂的 lookahead。
-        if self.check(TokenType::Int) {
+        if self.is_in_specifier() {
             self.parse_declaration().map(BlockItem::D)
         } else {
             self.parse_statement().map(BlockItem::S)
+        }
+    }
+    fn is_in_specifier(&mut self) -> bool {
+        if self.check(TokenType::Int)
+            || self.check(TokenType::Static)
+            || self.check(TokenType::Extern)
+        {
+            return true;
+        } else {
+            return false;
         }
     }
 
@@ -213,13 +253,20 @@ impl Parser {
     ///
     /// 文法规则: `<for-init> ::= <variable-declaration> | [<exp>] ";"`
     fn parse_for_init(&mut self) -> Result<ForInit, String> {
-        if self.check(TokenType::Int) {
+      
+        if self.is_in_specifier() {
             // 情况 1: `for (int i = 0; ...)`
             let decl = self.parse_declaration()?;
             match decl {
-                Declaration::Variable(var_decl) => Ok(ForInit::InitDecl(var_decl)),
+                Declaration::Variable(var_decl) => {
+                    // if !var_decl.storage_class.is_none() {
+                    //     return Err("Syntax Error: Storage-Class specifiers  is not allowed in a for-loop initializer.".to_string());
+                    // }
+                    Ok(ForInit::InitDecl(var_decl))
+                }
                 Declaration::Fun(_) => Err(
-                    "Syntax Error: Function declaration is not allowed in a for-loop initializer.".to_string(),
+                    "Syntax Error: Function declaration is not allowed in a for-loop initializer."
+                        .to_string(),
                 ),
             }
         } else if self.match_token(TokenType::Semicolon) {
@@ -433,13 +480,16 @@ impl Parser {
 
         match next_token.type_ {
             TokenType::Number => {
-                let value = next_token.lexeme.parse::<i64>().map_err(|e| {
-                    format!("Syntax Error: Invalid number format: {}", e)
-                })?;
+                let value = next_token
+                    .lexeme
+                    .parse::<i64>()
+                    .map_err(|e| format!("Syntax Error: Invalid number format: {}", e))?;
                 Ok(Expression::Constant(value))
             }
             TokenType::Identifier => {
-                let name = next_token.value.ok_or("Internal Error: Identifier token is missing a name")?;
+                let name = next_token
+                    .value
+                    .ok_or("Internal Error: Identifier token is missing a name")?;
                 if self.match_token(TokenType::LeftParen) {
                     // 这是一个函数调用
                     let args = self.parse_argument_list()?;
@@ -483,7 +533,10 @@ impl Parser {
             TokenType::Or => Some(20),
             TokenType::And => Some(30),
             TokenType::EqualEqual | TokenType::BangEqual => Some(40),
-            TokenType::Greater | TokenType::GreaterEqual | TokenType::Less | TokenType::LessEqual => Some(50),
+            TokenType::Greater
+            | TokenType::GreaterEqual
+            | TokenType::Less
+            | TokenType::LessEqual => Some(50),
             TokenType::Add | TokenType::Negate => Some(60), // 在中缀位置，'-' 是减法
             TokenType::Mul | TokenType::Div | TokenType::Remainder => Some(70),
             _ => None,
@@ -514,7 +567,10 @@ impl Parser {
             TokenType::GreaterEqual => Ok(BinaryOp::GreaterEqual),
             TokenType::Less => Ok(BinaryOp::Less),
             TokenType::LessEqual => Ok(BinaryOp::LessEqual),
-            _ => Err(format!("Internal Error: Cannot convert {:?} to a binary operator.", typ)),
+            _ => Err(format!(
+                "Internal Error: Cannot convert {:?} to a binary operator.",
+                typ
+            )),
         }
     }
 
@@ -524,7 +580,10 @@ impl Parser {
             TokenType::Negate => Ok(UnaryOp::Negate),
             TokenType::Complement => Ok(UnaryOp::Complement),
             TokenType::Bang => Ok(UnaryOp::Not),
-            _ => Err(format!("Internal Error: Cannot convert {:?} to a unary operator.", typ)),
+            _ => Err(format!(
+                "Internal Error: Cannot convert {:?} to a unary operator.",
+                typ
+            )),
         }
     }
 
