@@ -4,9 +4,21 @@ use crate::frontend::c_ast::{
     Block, BlockItem, Declaration, Expression, ForInit, FunDecl, Program, Statement, VarDecl,
 };
 #[derive(Debug, Clone, PartialEq)]
+pub enum InitValue {
+    Tentative,
+    Initial(i32),
+    NoInitalizer,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum IdentifierAttrs {
+    FunAttr { defined: bool, global: bool },
+    StaticAttr { init_value: InitValue, global: bool },
+    LocalAttr,
+}
+#[derive(Debug, Clone, PartialEq)]
 pub struct SymbolInfo {
     pub tpye: CType,
-    pub defined: bool,
+    pub identifier_attrs: IdentifierAttrs,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,9 +52,9 @@ impl TypeChecker {
         // 虽然C语言不允许在顶层声明变量，但这是个好习惯
         self.push_scope();
 
-        for decl in &ast.declarations {
+        for decl in &ast.functions {
             // 现在Program还没有全局变量
-            self.typecheck_declaration(decl)?;
+            self.typecheck_function_decl(decl)?;
         }
 
         self.pop_scope();
