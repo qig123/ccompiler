@@ -96,7 +96,7 @@ impl<'a> IdentifierResolver<'a> {
         f: &FunDecl,
         scope_kind: ScopeKind,
     ) -> Result<FunDecl, String> {
-        // 根据文本要求，检查块作用域内的 static 函数声明
+        // 检查块作用域内的非法声明
         if scope_kind == ScopeKind::Block {
             if let Some(StorageClass::Static) = f.storage_class {
                 return Err(
@@ -104,55 +104,46 @@ impl<'a> IdentifierResolver<'a> {
                         .to_string(),
                 );
             }
-            // 同时，块作用域内也不允许有函数体
             if f.body.is_some() {
-                return Err(
-                    "Semantic Error: Function definition is not allowed inside a block."
-                        .to_string(),
-                );
+                return Err(format!(
+                    "Semantic Error: Nested function definitions are not allowed (function '{}').",
+                    f.name
+                ));
             }
         }
-        if scope_kind == ScopeKind::File {
-            // 只有文件作用域的函数声明才应该被插入到全局（最外层）作用域
-            let existing_entry = self.find_identifier_in_current_scope(&f.name); // 假设当前是全局作用域
-            if let Some(info) = existing_entry {
-                if !info.has_linkage {
-                    return Err(format!(
-                        "Semantic Error: Redeclaration of '{}' as a different kind of symbol.",
-                        f.name
-                    ));
-                }
-            } else {
-                self.insert_identifier(
-                    f.name.clone(),
-                    IdentifierInfo {
-                        has_linkage: true,
-                        mangled_name: f.name.clone(),
-                    },
-                );
+
+        // 检查当前作用域的同名标识符冲突，如果无冲突则插入
+        if let Some(info) = self.find_identifier_in_current_scope(&f.name) {
+            // 允许函数重复声明，但不能与变量等其他符号冲突
+            if !info.has_linkage {
+                return Err(format!(
+                    "Semantic Error: Redeclaration of '{}' as a different kind of symbol.",
+                    f.name
+                ));
             }
-        } else { // scope_kind == ScopeKind::Block
-            // 对于块作用域的函数声明 (e.g., extern int foo();)，它是一个引用。
-            // 我们不需要在当前块作用域的符号表里为它创建新条目。
-            // 因为对它的引用解析，会通过 `resolve_expression` 中的函数调用解析逻辑，
-            // 从内到外查找到文件作用域的那个声明。
-            // 所以，对于块作用域的函数声明，我们在这里其实什么都不用做。
+        } else {
+            // 在当前作用域插入函数声明
+            self.insert_identifier(
+                f.name.clone(),
+                IdentifierInfo {
+                    has_linkage: true,
+                    mangled_name: f.name.clone(), // 函数名不修饰
+                },
+            );
         }
-        // --- 创建函数作用域 ---
-        // 此作用域将包含函数参数和函数体的所有局部变量。
+
+        // --- 创建函数/原型作用域 ---
         self.env_stack.push(HashMap::new());
 
         // 解析函数参数
         let mut resolved_params = Vec::new();
         for p_name in &f.parameters {
-            // 检查参数名是否在当前（函数）作用域内重复。
             if self.is_identifier_in_current_scope(p_name) {
                 return Err(format!(
                     "Semantic Error: Duplicate parameter name '{}' in function '{}'.",
                     p_name, f.name
                 ));
             }
-            // 为参数生成唯一的内部名称并存入符号表。
             let mangled_name = self.name_generator.new_variable_name(p_name.clone());
             self.insert_identifier(
                 p_name.clone(),
@@ -166,8 +157,6 @@ impl<'a> IdentifierResolver<'a> {
 
         // 解析函数体
         let resolved_body = if let Some(body_block) = &f.body {
-            // 直接在包含参数的同一作用域内解析函数体中的条目。
-            // 这样可以正确检测出函数体内的变量声明与参数名之间的冲突。
             let mut resolved_items: Vec<BlockItem> = Vec::new();
             for item in &body_block.0 {
                 let resolved_item = self.resolve_block_item(item)?;
@@ -175,18 +164,17 @@ impl<'a> IdentifierResolver<'a> {
             }
             Some(Block(resolved_items))
         } else {
-            // 函数只有声明，没有函数体。
             None
         };
 
-        // --- 退出函数作用域 ---
+        // --- 退出函数/原型作用域 ---
         self.env_stack.pop();
 
         Ok(FunDecl {
             name: f.name.clone(),
             parameters: resolved_params,
             body: resolved_body,
-            storage_class: None,
+            storage_class: f.storage_class.clone(),
         })
     }
 
@@ -231,14 +219,8 @@ impl<'a> IdentifierResolver<'a> {
                 Ok(Declaration::Variable(new_v))
             }
             Declaration::Fun(f) => {
-                // C语言标准禁止在函数内部定义另一个函数。
-                if f.body.is_some() {
-                    return Err(format!(
-                        "Semantic Error: Nested function definitions are not allowed (function '{}').",
-                        f.name
-                    ));
-                }
-                // 函数内的函数声明（原型）是允许的。
+                // 函数声明/定义的解析委托给 resolve_function_decl,
+                // 它会根据 scope_kind 正确处理嵌套函数定义等错误。
                 let new_f = self.resolve_function_decl(f, scope_kind)?;
                 Ok(Declaration::Fun(new_f))
             }
@@ -285,9 +267,14 @@ impl<'a> IdentifierResolver<'a> {
                                 mangled_name: v.name.clone(),
                             },
                         );
+                        // 保留初始值，让类型检查器来判断其合法性
+                        let new_init = match &v.init {
+                            Some(e) => Some(self.resolve_expression(e)?),
+                            None => None,
+                        };
                         Ok(VarDecl {
                             name: v.name.clone(),
-                            init: None, // extern 在块作用域不能有 init
+                            init: new_init,
                             storage_class: v.storage_class.clone(),
                         })
                     }

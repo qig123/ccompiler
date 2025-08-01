@@ -160,12 +160,13 @@ impl<'a> CodeGenerator<'a> {
             }
             Instruction::Call(name) => {
                 if self.tables.contains_key(name) {
-                    let r = self.tables.get(name).unwrap();
-                    if r.defined {
-                        self.emit_indented(&format!("call {} ", name), writer)
-                    } else {
-                        self.emit_indented(&format!("call {}@PLT", name), writer)
-                    }
+                    // let r = self.tables.get(name).unwrap();
+                    // if r.defined {
+                    //     self.emit_indented(&format!("call {} ", name), writer)
+                    // } else {
+                    //     self.emit_indented(&format!("call {}@PLT", name), writer)
+                    // }
+                    self.emit_indented(&format!("call {} ", name), writer)
                 } else {
                     self.emit_indented(&format!("call {}@PLT", name), writer)
                 }
