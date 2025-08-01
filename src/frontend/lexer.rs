@@ -13,6 +13,8 @@ pub enum TokenType {
     For,
     Continue,
     Break,
+    Static,
+    Extern,
     // Single-character tokens
     LeftParen,
     RightParen,
@@ -279,6 +281,8 @@ impl Lexer {
             "for" => TokenType::For,
             "break" => TokenType::Break,
             "continue" => TokenType::Continue,
+            "static" => TokenType::Static,
+            "extern" => TokenType::Extern,
             _ => TokenType::Identifier,
         };
 
